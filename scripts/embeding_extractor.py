@@ -38,7 +38,7 @@ class VoxCelebBatchLoader(Dataset):
                     )
                     if max_speakers:
                         if (
-                            speaker_id not in max_speakers
+                            speaker_id not in unique_speakers
                             and len(unique_speakers) >= max_speakers
                         ):
                             continue
