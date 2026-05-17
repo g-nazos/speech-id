@@ -4,6 +4,7 @@ import logging
 import torchaudio
 from torch.utils.data import Dataset, DataLoader
 from speechbrain.inference.speaker import SpeakerRecognition
+from speechbrain.utils.fetching import LocalStrategy
 import configparser
 
 config = configparser.ConfigParser()
@@ -101,8 +102,8 @@ def main(split, batch_size=16, target_sample_rate=16000, max_speakers=None):
     batch_size = batch_size
     sample_rate = target_sample_rate
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    if device != "cuda":
+    device = "cuda:0" if torch.cuda.is_available() else "cpu"
+    if device == "cpu":
         logger.warning("CUDA device not available, using CPU instead")
 
     logger.info("Starting embedding extraction")
@@ -122,6 +123,7 @@ def main(split, batch_size=16, target_sample_rate=16000, max_speakers=None):
         source="speechbrain/spkrec-ecapa-voxceleb",
         savedir="pretrained_models/spkrec-ecapa-voxceleb",
         run_opts={"device": device},
+        local_strategy=LocalStrategy.COPY,
     )
 
     all_embeddings = []
