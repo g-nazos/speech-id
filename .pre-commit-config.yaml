@@ -1,5 +1,5 @@
 repos:
   - repo: https://github.com/psf/black-pre-commit-mirror
-    rev: 24.4.2 # Black Version
+    rev: 26.5.0 # Black Version
     hooks:
       - id: black

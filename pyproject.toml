@@ -1,26 +1,26 @@
 [project]
 name = "speech-id"
 version = "0.1.0"
-requires-python = ">=3.13"
+requires-python = ">=3.13,<3.14"
 dependencies = [
-    "librosa>=0.11.0",
-    "numpy>=2.4.5",
-    "scipy-stubs~=1.17.1",
     "speechbrain>=1.1.0",
-    "torch>=2.12.0",
-    "torchaudio>=2.11.0",
-    "torchcodec>=0.12.0",
+    "torch>=2.11,<2.12",
+    "torchaudio>=2.11,<2.12",
+    # torchcodec is torchaudio's audio I/O backend in torch 2.11. We use the
+    # CPU build from PyPI (not the +cu128 one): audio is decoded to CPU tensors
+    # then moved to GPU manually, and the CPU wheel avoids the cu128 build's
+    # unconditional NPP/libcudart linkage that the loader can't resolve.
+    "torchcodec>=0.11,<0.12",
 ]
 
 [[tool.uv.index]]
-name = "pytorch-cu126"
-url = "https://download.pytorch.org/whl/cu126"
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
 explicit = true
 
 [tool.uv.sources]
-torch = [{ index = "pytorch-cu126" }]
-torchaudio = [{ index = "pytorch-cu126" }]
-torchvision = [{ index = "pytorch-cu126" }]
+torch = [{ index = "pytorch-cu128" }]
+torchaudio = [{ index = "pytorch-cu128" }]
 
 [dependency-groups]
 dev = [
