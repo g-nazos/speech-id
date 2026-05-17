@@ -187,3 +187,4 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+/configs/config.ini.py
