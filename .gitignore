@@ -188,3 +188,4 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 /configs/config.ini.py
+/data/vox1_dev_wav/
