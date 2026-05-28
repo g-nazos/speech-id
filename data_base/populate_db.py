@@ -1,34 +1,26 @@
 import os
 import csv
+import struct
 import torch
 import psycopg
 from dotenv import load_dotenv
-from pgvector.psycopg import register_vector 
 
-# Load variables from .env file
 load_dotenv()
 
-# --- DATABASE CONFIGURATION ---
 DB_USER = os.getenv("DB_USER")
 DB_PASSWORD = os.getenv("DB_PASSWORD")
 DB_NAME = os.getenv("DB_NAME")
 DB_HOST = os.getenv("DB_HOST")
 DB_PORT = os.getenv("DB_PORT")
 
-# Dynamically build the connection string
 DB_CONN_STRING = f"host={DB_HOST} port={DB_PORT} dbname={DB_NAME} user={DB_USER} password={DB_PASSWORD}"
 
-# --- SYSTEM PATHS ---
 PT_FILE_PATH = os.getenv("PT_FILE_PATH")
 METADATA_CSV_PATH = os.getenv("METADATA_CSV_PATH")
 
 
 def load_metadata_lookup(csv_path):
-    """
-    Reads the VoxCeleb metadata file and builds a high-speed
-    lookup dictionary mapped by Speaker ID.
-    Auto-detects if the file is comma-separated or tab-separated.
-    """
+    """Parses VoxCeleb metadata into a dictionary mapped by Speaker ID."""
     metadata_lookup = {}
     
     if not csv_path or not os.path.exists(csv_path):
@@ -36,12 +28,9 @@ def load_metadata_lookup(csv_path):
         return metadata_lookup
 
     with open(csv_path, mode='r', encoding='utf-8') as f:
-        # Peek at the header line to see if it contains tabs or commas
         first_line = f.readline()
         delimiter = '\t' if '\t' in first_line else ','
-        f.seek(0)  # Reset file pointer back to the beginning
-        
-        print(f"Auto-detected delimiter for metadata: {'[TAB]' if delimiter == '\t' else '[COMMA]'}")
+        f.seek(0)
         
         reader = csv.DictReader(f, delimiter=delimiter)
         
@@ -50,7 +39,6 @@ def load_metadata_lookup(csv_path):
             gender = row.get('Gender', 'unknown').strip().lower()
             nationality = row.get('Nationality', 'unknown').strip()
             
-            # Standardize gender strings to match database constraints
             gender_full = "male" if gender in ["m", "male"] else "female" if gender in ["f", "female"] else "unknown"
             
             if spk_id:
@@ -59,76 +47,106 @@ def load_metadata_lookup(csv_path):
                     "nationality": nationality
                 }
                 
-    print(f"Successfully indexed real metadata for {len(metadata_lookup)} speakers.")
+    print(f"Indexed metadata for {len(metadata_lookup)} speakers.")
     return metadata_lookup
 
 
+def compute_and_save_centroids(cur):
+    """Computes and stores metadata vector averages via PostgreSQL aggregation."""
+    print("Generating metadata centroids...")
+    
+    cur.execute("TRUNCATE TABLE metadata_centroids;")
+    
+    gender_query = """
+        INSERT INTO metadata_centroids (category, category_value, centroid_vector)
+        SELECT 
+            'gender' as category,
+            s.gender as category_value,
+            avg(ae.embedding)::vector(192) as centroid_vector
+        FROM audio_embeddings ae
+        JOIN speakers s ON ae.speaker_id = s.speaker_id
+        WHERE s.gender IS NOT NULL AND s.gender != 'unknown'
+        GROUP BY s.gender;
+    """
+    cur.execute(gender_query)
+    
+    nationality_query = """
+        INSERT INTO metadata_centroids (category, category_value, centroid_vector)
+        SELECT 
+            'nationality' as category,
+            s.nationality as category_value,
+            avg(ae.embedding)::vector(192) as centroid_vector
+        FROM audio_embeddings ae
+        JOIN speakers s ON ae.speaker_id = s.speaker_id
+        WHERE s.nationality IS NOT NULL AND s.nationality != 'unknown'
+        GROUP BY s.nationality;
+    """
+    cur.execute(nationality_query)
+    print("Centroid generation completed.")
+
+
 def load_data_to_postgres():
-    # Defensive checks to ensure paths exist before running expensive loading operations
     if not PT_FILE_PATH or not os.path.exists(PT_FILE_PATH):
-        print(f"Error: Embeddings file not found at: '{PT_FILE_PATH}'. Check your .env file.")
+        print(f"Error: Embeddings file not found at: '{PT_FILE_PATH}'.")
         return
 
-    # Load metadata lookup with auto-detection
     metadata_map = load_metadata_lookup(METADATA_CSV_PATH)
 
-    print("Loading .pt file into Python memory... (this might take a few seconds)")
+    print("Loading tensor data into memory...")
     data = torch.load(PT_FILE_PATH, map_location=torch.device('cpu'))
     
-    embeddings = data['embeddings'].tolist()  # Convert PyTorch tensor to Python lists
+    embeddings = data['embeddings'].tolist()
     speakers = data['speakers']
     processed_files = data['processed_files']
     
     total_records = len(speakers)
-    print(f"Found {total_records} records to process.")
+    print(f"Processing {total_records} records...")
 
-    print(f"Connecting to PostgreSQL database '{DB_NAME}' on {DB_HOST}:{DB_PORT}...")
     try:
         with psycopg.connect(DB_CONN_STRING) as conn:
-            
-            
-            print("Registering native pgvector adapter...")
-            register_vector(conn)
-            
             with conn.cursor() as cur:
                 
-                # --- STEP 1: Populate Unique Speakers (Using REAL Metadata) ---
-                print("Extracting and inserting unique speakers...")
                 unique_speakers = set(speakers)
-                
                 speaker_rows = []
+                
                 for spk_id in unique_speakers:
                     spk_meta = metadata_map.get(spk_id, {"gender": "unknown", "nationality": "unknown"})
                     speaker_rows.append((spk_id, spk_meta["gender"], spk_meta["nationality"]))
                 
-                # Fast batch insert for speakers
-                with cur.copy("COPY speakers (speaker_id, gender, nationality) FROM STDIN") as copy:
-                    for row in speaker_rows:
-                        copy.write_row(row)
-                
-                print(f"Successfully inserted {len(unique_speakers)} unique speakers.")
+                print("Inserting speakers...")
+                cur.executemany("""
+                    INSERT INTO speakers (speaker_id, gender, nationality)
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT (speaker_id) DO NOTHING;
+                """, speaker_rows)
 
-                # --- STEP 2: Populate Audio Embeddings (Fact Table) ---
-                print("Batch-inserting audio embeddings...")
+                print("Executing binary COPY for audio embeddings...")
+                copy_query = "COPY audio_embeddings (speaker_id, file_path, embedding) FROM STDIN WITH (FORMAT BINARY)"
                 
-                # UPDATED: Generator now yields the native Python list directly
-                def embedding_records_generator():
+                with cur.copy(copy_query) as copy:
                     for i in range(total_records):
-                        # No string formatting required! pgvector handles the list natively.
-                        yield (speakers[i], processed_files[i], embeddings[i])
+                        spk_id = speakers[i]
+                        file_path = processed_files[i]
+                        vector = embeddings[i]
+                        
+                        spk_bytes = spk_id.encode('utf-8')
+                        path_bytes = file_path.encode('utf-8')
+                        
+                        dim = len(vector)
+                        unused = 0
+                        vector_binary_data = struct.pack(f">HH{dim}f", dim, unused, *vector)
 
-                with cur.copy("COPY audio_embeddings (speaker_id, file_path, embedding) FROM STDIN") as copy:
-                    for row in embedding_records_generator():
-                        copy.write_row(row)
-
-                print(f"Successfully inserted all {total_records} vector records!")
+                        copy.write_row([spk_bytes, path_bytes, vector_binary_data])
                 
-        print("Data migration pipeline completed seamlessly!")
+                compute_and_save_centroids(cur)
+                conn.commit()
+                
+        print("Database population pipeline finished successfully.")
 
     except psycopg.OperationalError as e:
         print(f"Database Connection Error: {e}")
-        print("Please double check that your PostgreSQL container is running and your .env credentials match.")
-
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
 
 if __name__ == "__main__":
     load_data_to_postgres()
