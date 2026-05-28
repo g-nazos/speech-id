@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS cluster_centroids (
 CREATE TABLE IF NOT EXISTS audio_embeddings (
     -- Best Practice: Use IDENTITY instead of SERIAL
     id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY, 
-    speaker_id VARCHAR(50) REFERENCES speakers(speaker_id) ON DELETE CASCADE,
+    speaker_id VARCHAR(20) REFERENCES speakers(speaker_id) ON DELETE CASCADE,
     file_path TEXT NOT NULL,
     cluster_id INT REFERENCES cluster_centroids(cluster_id) ON DELETE SET NULL,
     embedding VECTOR(192) NOT NULL
