@@ -3,6 +3,7 @@ import csv
 import torch
 import psycopg
 from dotenv import load_dotenv
+from pgvector.psycopg import register_vector 
 
 # Load variables from .env file
 load_dotenv()
@@ -84,6 +85,11 @@ def load_data_to_postgres():
     print(f"Connecting to PostgreSQL database '{DB_NAME}' on {DB_HOST}:{DB_PORT}...")
     try:
         with psycopg.connect(DB_CONN_STRING) as conn:
+            
+            
+            print("Registering native pgvector adapter...")
+            register_vector(conn)
+            
             with conn.cursor() as cur:
                 
                 # --- STEP 1: Populate Unique Speakers (Using REAL Metadata) ---
@@ -105,15 +111,11 @@ def load_data_to_postgres():
                 # --- STEP 2: Populate Audio Embeddings (Fact Table) ---
                 print("Batch-inserting audio embeddings...")
                 
-                # Helper function to convert float list to pgvector string format: "[0.1,0.2,...]"
-                def format_vector(vector_list):
-                    return "[" + ",".join(map(str, vector_list)) + "]"
-
-                # Generator to stream data over to the database container efficiently
+                # UPDATED: Generator now yields the native Python list directly
                 def embedding_records_generator():
                     for i in range(total_records):
-                        formatted_emb = format_vector(embeddings[i])
-                        yield (speakers[i], processed_files[i], formatted_emb)
+                        # No string formatting required! pgvector handles the list natively.
+                        yield (speakers[i], processed_files[i], embeddings[i])
 
                 with cur.copy("COPY audio_embeddings (speaker_id, file_path, embedding) FROM STDIN") as copy:
                     for row in embedding_records_generator():
