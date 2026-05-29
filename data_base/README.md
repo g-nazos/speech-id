@@ -1,104 +1,123 @@
 # VoxCeleb PostgreSQL Database for Speech-ID
 
-This folder contains the PostgreSQL database setup used to store VoxCeleb speaker embeddings, speaker metadata, and derived centroids.
+This folder contains the local PostgreSQL database setup used by the Speech-ID pipeline.
+It stores VoxCeleb speaker embeddings, speaker metadata, computed metadata centroids, and unsupervised cluster centroids.
 
 ## Contents
 
-- `docker-compose.yml` - starts a local PostgreSQL instance with `pgvector` enabled.
-- `init.sql` - creates the database schema and indexes.
-- `populate_db.py` - loads PyTorch-saved embeddings and speaker metadata into the database.
-- `.env` - local database and file path configuration.
+- `docker-compose.yml` — starts a PostgreSQL container with `pgvector` enabled.
+- `init.sql` — creates the database schema, tables, and indexes.
+- `populate_db.py` — ingests embeddings, computes metadata centroids, and runs clustering.
+- `.env` — database credentials and source file paths.
 
-## Database Components
+## Database Schema
 
-### 1. `speakers`
-Stores speaker-level metadata.
+### `speakers`
+Stores speaker metadata.
 
 Columns:
-- `speaker_id VARCHAR(20) PRIMARY KEY` - unique speaker identifier.
-- `gender VARCHAR(10) NOT NULL` - speaker gender label.
-- `nationality VARCHAR(20) NOT NULL` - speaker nationality label.
+- `speaker_id VARCHAR(20) PRIMARY KEY`
+- `gender VARCHAR(10) NOT NULL`
+- `nationality VARCHAR(20) NOT NULL`
 
 Indexes:
-- Composite index `idx_speakers_gender_nat` on `(gender, nationality)` to speed queries by both fields.
+- `idx_speakers_gender_nat` on `(gender, nationality)`
 
-### 2. `audio_embeddings`
-Stores audio embeddings for individual speech files.
+### `audio_embeddings`
+Stores individual audio embedding records.
 
 Columns:
-- `id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY` - embedding row identifier.
-- `speaker_id VARCHAR(20)` - foreign key to `speakers(speaker_id)`.
-- `file_path TEXT NOT NULL` - original audio file or processed file path.
-- `cluster_id INT` - optional cluster assignment, references `cluster_centroids(cluster_id)`.
-- `embedding VECTOR(192) NOT NULL` - 192-dimensional speaker embedding vector.
+- `id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY`
+- `speaker_id VARCHAR(20)` — references `speakers(speaker_id)`
+- `file_path TEXT NOT NULL`
+- `cluster_id INT` — references `cluster_centroids(cluster_id)`
+- `embedding VECTOR(192) NOT NULL`
 
 Indexes:
-- `idx_audio_embeddings_speaker` on `speaker_id` for faster joins.
-- `idx_audio_embeddings_cluster` on `cluster_id` for cluster-based lookups.
-- `idx_global_vector_hnsw` is an HNSW vector index on `embedding` using cosine similarity.
+- `idx_audio_embeddings_speaker` on `speaker_id`
+- `idx_audio_embeddings_cluster` on `cluster_id`
+- `idx_global_vector_hnsw` on `embedding` using `hnsw (embedding vector_cosine_ops)`
 
-### 3. `metadata_centroids`
-Stores centroid vectors aggregated from speaker metadata.
+### `metadata_centroids`
+Stores averaged embedding centroids derived from speaker metadata.
 
 Columns:
-- `category VARCHAR(20) NOT NULL` - metadata category, e.g. `gender` or `gender_nationality`.
-- `category_value VARCHAR(50) NOT NULL` - category label or composite label, e.g. `male`, `female`, `male:US`.
-- `centroid_vector VECTOR(192) NOT NULL` - averaged embedding for the category.
+- `category VARCHAR(20) NOT NULL`
+- `category_value VARCHAR(50) NOT NULL`
+- `centroid_vector VECTOR(192) NOT NULL`
 
-Usage:
-- Used to compute metadata-level centroids for downstream analysis or similarity searches.
+Primary key:
+- `(category, category_value)`
 
-### 4. `cluster_centroids`
-Reserved for unsupervised cluster centroids.
+Current use:
+- Computed from `audio_embeddings` grouped by `gender`
+  and by `gender:nationality`.
+
+### `cluster_centroids`
+Stores unsupervised cluster centroids.
 
 Columns:
 - `cluster_id INT PRIMARY KEY`
 - `centroid_vector VECTOR(192) NOT NULL`
 
-Notes:
-- This table is defined for future clustering phases and is not currently populated by `populate_db.py`.
+Current use:
+- Populated by `build_unsupervised_clusters()` in `populate_db.py`.
+- Used to assign `audio_embeddings.cluster_id`.
 
-## How to Run
+## How `populate_db.py` works
 
-1. Copy or update `.env` with your local settings.
+The script has three phases:
+
+1. `load_data_to_postgres()`
+   - Loads the `.pt` embeddings file and VoxCeleb metadata CSV.
+   - Inserts unique speakers into `speakers`.
+   - Writes audio embeddings into `audio_embeddings` using PostgreSQL binary COPY.
+   - Calls `compute_and_save_centroids(cur)` to truncate and rebuild `metadata_centroids`.
+     This function computes gender-level and gender+nationality centroids from `audio_embeddings`.
+
+2. `fetch_embeddings()`
+   - Reads committed embeddings from `audio_embeddings`.
+   - Converts them into NumPy arrays for clustering.
+
+3. `build_unsupervised_clusters(num_clusters=256)`
+   - Normalizes embeddings for cosine-style geometry.
+   - Runs `MiniBatchKMeans`.
+   - Deletes old rows from `cluster_centroids`.
+   - Inserts new cluster centroids.
+   - Updates `audio_embeddings.cluster_id`.
+
+When run as a script, `__main__` executes both ingestion and clustering.
+
+## Configuration
+
+Edit `data_base/.env` for your local environment.
+
+Example:
 
 ```ini
-DB_USER=postgres
-DB_PASSWORD=<your-password>
-DB_NAME=voxceleb_speaker_id
+DB_USER=user
+DB_PASSWORD=password
+DB_NAME= db
 DB_HOST=localhost
-DB_PORT=5432
-PT_FILE_PATH=data_base/data/voxceleb_embeddings.pt
-METADATA_CSV_PATH=data_base/data/vox1_meta.csv
+DB_PORT=8023
+PT_FILE_PATH=data_base\data\voxceleb_embeddings.pt
+METADATA_CSV_PATH=data_base\data\vox1_meta.csv
 ```
 
-2. Start the database:
+
+
+## How to run
 
 ```bash
 cd data_base
 docker-compose up -d
-```
-
-3. Populate the database:
-
-```bash
 python populate_db.py
 ```
 
-## Notes and Recommendations
+## Notes
 
-- `populate_db.py` reads the `.pt` file and the metadata CSV, inserts unique speakers, and loads embeddings into `audio_embeddings`.
-- The current `metadata_centroids` population logic builds a hierarchical centroid tree for gender and gender+nationality categories.
-- The `cluster_centroids` table exists for future cluster-based queries.
-- Paths stored in `file_path` should be reviewed if you want portability across machines.
+- `init.sql` enables the `vector` extension and creates the complete schema used by the script.
+- `cluster_centroids` is not just a placeholder; it is populated by the clustering phase.
+- `metadata_centroids` is recomputed from the current contents of `audio_embeddings`.
+- The current ingest path uses PostgreSQL binary COPY for `audio_embeddings`.
 
-## File Paths and Configuration
-
-- `PT_FILE_PATH` should point to the serialized embedding file created by `scripts/embeding_extractor.py`.
-- `METADATA_CSV_PATH` should point to the VoxCeleb metadata CSV file used to map speaker IDs to gender/nationality.
-
-## Troubleshooting
-
-- Ensure the PostgreSQL container is running before `populate_db.py` connects.
-- Verify `.env` values are correct and that `psycopg` and `python-dotenv` are installed.
-- If the `.pt` file or metadata CSV cannot be found, `populate_db.py` will emit errors and terminate early.
