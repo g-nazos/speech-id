@@ -52,11 +52,12 @@ def load_metadata_lookup(csv_path):
 
 
 def compute_and_save_centroids(cur):
-    """Computes and stores metadata vector averages via PostgreSQL aggregation."""
-    print("Generating metadata centroids...")
+    """Computes a two-layer hierarchy using existing metadata_centroids columns."""
+    print("Generating hierarchical tree centroids...")
     
     cur.execute("TRUNCATE TABLE metadata_centroids;")
     
+    # Layer 1: Global Gender Centroids
     gender_query = """
         INSERT INTO metadata_centroids (category, category_value, centroid_vector)
         SELECT 
@@ -70,19 +71,20 @@ def compute_and_save_centroids(cur):
     """
     cur.execute(gender_query)
     
-    nationality_query = """
+    # Layer 2: Dependent Gender-Nationality Centroids (e.g., 'male:US')
+    gender_nat_query = """
         INSERT INTO metadata_centroids (category, category_value, centroid_vector)
         SELECT 
-            'nationality' as category,
-            s.nationality as category_value,
+            'gender_nationality' as category,
+            CONCAT(s.gender, ':', s.nationality) as category_value,
             avg(ae.embedding)::vector(192) as centroid_vector
         FROM audio_embeddings ae
         JOIN speakers s ON ae.speaker_id = s.speaker_id
-        WHERE s.nationality IS NOT NULL AND s.nationality != 'unknown'
-        GROUP BY s.nationality;
+        WHERE s.gender != 'unknown' AND s.nationality != 'unknown'
+        GROUP BY s.gender, s.nationality;
     """
-    cur.execute(nationality_query)
-    print("Centroid generation completed.")
+    cur.execute(gender_nat_query)
+    print("Centroid tree generation completed.")
 
 
 def load_data_to_postgres():
