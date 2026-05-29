@@ -1,9 +1,13 @@
 import os
 import csv
+import json
 import struct
 import torch
 import psycopg
+import numpy as np
 from dotenv import load_dotenv
+from sklearn.cluster import MiniBatchKMeans
+from sklearn.preprocessing import normalize
 
 load_dotenv()
 
@@ -52,7 +56,7 @@ def load_metadata_lookup(csv_path):
 
 
 def compute_and_save_centroids(cur):
-    """Computes a two-layer hierarchy using existing metadata_centroids columns."""
+    """Computes a two-layer hierarchy using existing metadata_centroids columns (Phase 2)."""
     print("Generating hierarchical tree centroids...")
     
     cur.execute("TRUNCATE TABLE metadata_centroids;")
@@ -88,6 +92,7 @@ def compute_and_save_centroids(cur):
 
 
 def load_data_to_postgres():
+    """Populates the speakers and audio_embeddings tables from raw source files (Phase 1)."""
     if not PT_FILE_PATH or not os.path.exists(PT_FILE_PATH):
         print(f"Error: Embeddings file not found at: '{PT_FILE_PATH}'.")
         return
@@ -150,5 +155,96 @@ def load_data_to_postgres():
     except Exception as e:
         print(f"An unexpected error occurred: {e}")
 
+
+def fetch_embeddings(cur):
+    """Helper: Fetches all committed embeddings and their generated IDs from PostgreSQL."""
+    print("Fetching embeddings from PostgreSQL for clustering...")
+    cur.execute("SELECT id, embedding::text FROM audio_embeddings;")
+    rows = cur.fetchall()
+    
+    ids = np.array([row[0] for row in rows])
+    raw_vectors = np.array([json.loads(row[1]) for row in rows], dtype=np.float32)
+    
+    print(f"Successfully loaded {len(ids)} vectors into Python memory.")
+    return ids, raw_vectors
+
+
+def build_unsupervised_clusters(num_clusters=256):
+    """Executes Phase 3: Unsupervised Spherical K-Means Clustering on existing database entries."""
+    try:
+        with psycopg.connect(DB_CONN_STRING) as conn:
+            with conn.cursor() as cur:
+                
+                # Step 1: Pull database records into NumPy space
+                ids, raw_vectors = fetch_embeddings(cur)
+                
+                if len(ids) == 0:
+                    print("Error: No embeddings found to cluster! Ensure Phase 1 ran correctly.")
+                    return
+                
+                # Step 2: Apply the Spherical K-Means Normalization Trick
+                print("Applying L2 normalization to match database Cosine geometry...")
+                normalized_vectors = normalize(raw_vectors, norm='l2', axis=1)
+                
+                # Step 3: Run K-Means
+                print(f"Training MiniBatchKMeans with K={num_clusters}...")
+                kmeans = MiniBatchKMeans(
+                    n_clusters=num_clusters, 
+                    batch_size=2048, 
+                    random_state=42, 
+                    n_init='auto'
+                )
+                cluster_labels = kmeans.fit_predict(normalized_vectors)
+                
+                # Re-normalize resulting cluster centers to guarantee perfect spherical bounds
+                raw_centroids = kmeans.cluster_centers_
+                normalized_centroids = normalize(raw_centroids, norm='l2', axis=1)
+                
+                # Step 4: Safely wipe cluster_centroids using DML DELETE
+                print("Clearing old cluster centers safely...")
+                cur.execute("DELETE FROM cluster_centroids;")
+                
+                centroid_insert_data = [
+                    (i, normalized_centroids[i].tolist()) for i in range(num_clusters)
+                ]
+                cur.executemany("""
+                    INSERT INTO cluster_centroids (cluster_id, centroid_vector)
+                    VALUES (%s, %s::vector)
+                """, centroid_insert_data)
+                
+                # Step 5: Fast temporary-table batch update to assign rows to clusters
+                print("Executing high-speed bulk update for cluster assignments...")
+                cur.execute("""
+                    CREATE TEMP TABLE temp_cluster_assignments (
+                        embedding_id INT,
+                        cluster_id INT
+                    ) ON COMMIT DROP;
+                """)
+                
+                copy_query = "COPY temp_cluster_assignments (embedding_id, cluster_id) FROM STDIN"
+                with cur.copy(copy_query) as copy:
+                    for db_id, cluster_id in zip(ids, cluster_labels):
+                        copy.write_row([int(db_id), int(cluster_id)])
+                
+                cur.execute("""
+                    UPDATE audio_embeddings ae
+                    SET cluster_id = tc.cluster_id
+                    FROM temp_cluster_assignments tc
+                    WHERE ae.id = tc.embedding_id;
+                """)
+                
+                conn.commit()
+                print("Phase 3 unsupervised clustering completed successfully.")
+
+    except psycopg.OperationalError as e:
+        print(f"Database Connection Error: {e}")
+    except Exception as e:
+        print(f"An unexpected clustering error occurred: {e}")
+
+
 if __name__ == "__main__":
+    # 1. Runs Phase 1 (Ingestion) & Phase 2 (Hierarchical Metadata Mapping)
     load_data_to_postgres()
+    
+    # 2. Runs Phase 3 (Unsupervised Clustering Partitioning via K-Means)
+    build_unsupervised_clusters(num_clusters=256)
