@@ -8,7 +8,7 @@ It stores VoxCeleb speaker embeddings, speaker metadata, computed metadata centr
 - `docker-compose.yml` — starts a PostgreSQL container with `pgvector` enabled.
 - `init.sql` — creates the database schema, tables, and indexes.
 - `populate_db.py` — ingests embeddings, computes metadata centroids, and runs clustering.
-- `.env` — database credentials and source file paths.
+- `.env` — database credentials and source file names.
 
 ## Database Schema
 
@@ -100,9 +100,14 @@ DB_PASSWORD=password
 DB_NAME= db
 DB_HOST=localhost
 DB_PORT=8023
-PT_FILE_PATH=data_base\data\voxceleb_embeddings.pt
-METADATA_CSV_PATH=data_base\data\vox1_meta.csv
+PT_FILE_NAME=voxceleb_embeddings.pt
+METADATA_CSV_NAME=vox1_meta.csv
 ```
+
+`PT_FILE_NAME` and `METADATA_CSV_NAME` are just file names, not full paths.
+The script resolves them against `data_base/data/` relative to `populate_db.py`,
+so it works regardless of your current working directory and on Windows, Linux,
+and macOS. Place the `.pt` embeddings file and `vox1_meta.csv` in `data_base/data/`.
 
 
 
@@ -111,8 +116,11 @@ METADATA_CSV_PATH=data_base\data\vox1_meta.csv
 ```bash
 cd data_base
 docker-compose up -d
-python populate_db.py
+uv run populate_db.py
 ```
+
+Use `uv run` (or the project's `.venv` interpreter) so dependencies like
+`torch` are available — a bare `python` on your PATH may not have them.
 
 ## Notes
 
