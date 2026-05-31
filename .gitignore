@@ -190,3 +190,9 @@ __marimo__/
 /configs/config.ini.py
 /data/vox1_dev_wav/
 /.claude/
+
+data
+data_base/data
+
+pretrained_models
+/scripts/_verify_split.py

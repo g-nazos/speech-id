@@ -7,10 +7,14 @@ from speechbrain.inference.speaker import SpeakerRecognition
 from speechbrain.utils.fetching import LocalStrategy
 import configparser
 
-config = configparser.ConfigParser()
-config.read(os.path.join(os.getcwd(), "configs", "config.ini"))
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-log_filename = os.path.join("logs", "running_logs.log")
+config = configparser.ConfigParser()
+config.read(os.path.join(project_root, "configs", "config.ini"))
+
+# Ensure the logs directory exists
+os.makedirs(os.path.join(project_root, "logs"), exist_ok=True)
+log_filename = os.path.join(project_root, "logs", "running_logs.log")
 logging.basicConfig(
     level=logging.INFO,  # Change to logging.DEBUG if you want extremely verbose output
     format="%(asctime)s | %(levelname)-8s | %(message)s",
@@ -53,8 +57,7 @@ class VoxCelebBatchLoader(Dataset):
                         unique_speakers.add(speaker_id)
                     self.files.append((file_path, speaker_id))
 
-        # Sort by file size in descending order (largest/longest files first)
-        # to immediately verify VRAM limits/CPU fallbacks and keep padding compact
+        # Sort by file size in descending order to verify VRAM limits
         self.files.sort(key=lambda x: os.path.getsize(x[0]), reverse=True)
 
         total_unique_loaded = len(set([s for _, s in self.files]))
@@ -121,10 +124,12 @@ def main(
     data_loader_workers=0,
     max_speakers=None,
 ):
-    datadir = os.path.join(os.getcwd(), "data", split)
+    datadir = os.path.join(project_root, "data", split)
     batch_size = batch_size
     sample_rate = target_sample_rate
     checkpoint_path = config["base"]["EMBEDDING_SAVE_DIR"]
+    if not os.path.isabs(checkpoint_path):
+        checkpoint_path = os.path.join(project_root, checkpoint_path)
 
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
     if device == "cpu":
@@ -178,7 +183,9 @@ def main(
     logger.info("Loading the pre-trained Speechbrain ECAPA-TDNN model")
     model = SpeakerRecognition.from_hparams(
         source="speechbrain/spkrec-ecapa-voxceleb",
-        savedir="pretrained_models/spkrec-ecapa-voxceleb",
+        savedir=os.path.join(
+            project_root, "pretrained_models", "spkrec-ecapa-voxceleb"
+        ),
         run_opts={"device": device},
         local_strategy=LocalStrategy.COPY,
     )
