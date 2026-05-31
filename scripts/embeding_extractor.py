@@ -57,8 +57,7 @@ class VoxCelebBatchLoader(Dataset):
                         unique_speakers.add(speaker_id)
                     self.files.append((file_path, speaker_id))
 
-        # Sort by file size in descending order (largest/longest files first)
-        # to immediately verify VRAM limits/CPU fallbacks and keep padding compact
+        # Sort by file size in descending order to verify VRAM limits
         self.files.sort(key=lambda x: os.path.getsize(x[0]), reverse=True)
 
         total_unique_loaded = len(set([s for _, s in self.files]))
