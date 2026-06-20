@@ -63,6 +63,18 @@ The pretrained model is downloaded automatically on first run to `pretrained_mod
 
 Logs are written to `scripts/logs/running_logs.log` and stdout.
 
+## Database Utilities
+
+The `data_base/` folder contains the local PostgreSQL setup used by the speech ID pipeline, including the schema creation, population, and schema overview scripts.
+
+See [data_base/README.md](data_base/README.md) for details.
+
+## Evaluation
+
+The `evaluate/` package contains the speaker identification evaluation code for VoxCeleb1. It compares brute-force, metadata-hierarchical, and cluster-routed search strategies and writes the results to a JSON file.
+
+See [evaluate/README.md](evaluate/README.md) for the package layout and experiment description.
+
 ## Output
 
 A `.pt` file (path set in config) containing:

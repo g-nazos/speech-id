@@ -8,6 +8,7 @@ It stores VoxCeleb speaker embeddings, speaker metadata, computed metadata centr
 - `docker-compose.yml` — starts a PostgreSQL container with `pgvector` enabled.
 - `init.sql` — creates the database schema, tables, and indexes.
 - `populate_db.py` — ingests embeddings, computes metadata centroids, and runs clustering.
+- `schema_overview.py` — reads the live database and generates a Markdown schema/contents overview.
 - `.env` — database credentials and source file names.
 
 ## Database Schema
@@ -51,7 +52,7 @@ Primary key:
 
 Current use:
 - Computed from `audio_embeddings` grouped by `gender`
-  and by `gender:nationality`.
+   and by `gender:nationality`.
 
 ### `cluster_centroids`
 Stores unsupervised cluster centroids.
@@ -117,6 +118,24 @@ and macOS. Place the `.pt` embeddings file and `vox1_meta.csv` in `data_base/dat
 cd data_base
 docker-compose up -d
 uv run populate_db.py
+
+Generate a read-only Markdown overview of the live database schema and table contents:
+
+```bash
+uv run python schema_overview.py --output-file ../results/database_schema_overview.md
+```
+
+Omit `--output-file` to print the report only to the terminal.
+```
+
+## Evaluation
+
+The speaker search evaluation code lives in [evaluate/](../evaluate/README.md).
+
+Run it from the project root with:
+
+```bash
+python evaluate/evaluate_search.py
 ```
 
 Use `uv run` (or the project's `.venv` interpreter) so dependencies like
