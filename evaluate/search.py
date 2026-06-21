@@ -15,7 +15,9 @@ def metric_operator(metric: str) -> str:
     raise ValueError(f"Unsupported metric: {metric}")
 
 
-def route_best_label(query: np.ndarray, labels: list[str], vectors: np.ndarray, metric: str) -> str | None:
+def route_best_label(
+    query: np.ndarray, labels: list[str], vectors: np.ndarray, metric: str
+) -> str | None:
     if not labels or vectors.size == 0:
         return None
 
@@ -27,17 +29,33 @@ def route_best_label(query: np.ndarray, labels: list[str], vectors: np.ndarray, 
     return labels[int(np.argmin(distances))]
 
 
+def route_best_labels(
+    query: np.ndarray, labels: list[str], vectors: np.ndarray, metric: str, top_n: int
+) -> list[str]:
+    if not labels or vectors.size == 0:
+        return []
+
+    if metric == "cosine":
+        order = np.argsort(-(vectors @ query))
+    else:
+        order = np.argsort(np.linalg.norm(vectors - query, axis=1))
+
+    limit = max(1, min(top_n, len(labels)))
+    return [labels[index] for index in order[:limit]]
+
+
 def route_metadata_query(
     query: np.ndarray,
     metric: str,
     metadata_centroids: dict[str, tuple[list[str], np.ndarray]],
-) -> tuple[str | None, str | None]:
+    probe_count: int = 1,
+) -> tuple[str | None, list[str]]:
     gender_labels, gender_vectors = metadata_centroids.get(
         "gender", ([], np.empty((0, 192), dtype=np.float32))
     )
     best_gender = route_best_label(query, gender_labels, gender_vectors, metric)
     if best_gender is None:
-        return None, None
+        return None, []
 
     nat_labels, nat_vectors = metadata_centroids.get(
         "gender_nationality", ([], np.empty((0, 192), dtype=np.float32))
@@ -51,12 +69,17 @@ def route_metadata_query(
             filtered_vectors.append(vector)
 
     if not filtered_labels:
-        return best_gender, None
+        return best_gender, []
 
-    best_nat = route_best_label(query, filtered_labels, np.asarray(filtered_vectors, dtype=np.float32), metric)
-    if best_nat is None or ":" not in best_nat:
-        return best_gender, None
-    return best_gender, best_nat.split(":", 1)[1]
+    best_labels = route_best_labels(
+        query,
+        filtered_labels,
+        np.asarray(filtered_vectors, dtype=np.float32),
+        metric,
+        probe_count,
+    )
+    nationalities = [label.split(":", 1)[1] for label in best_labels if ":" in label]
+    return best_gender, nationalities
 
 
 def route_cluster_query(
@@ -123,7 +146,9 @@ def collapse_utterance_hits(
             ranked.append(speaker_id)
             if len(ranked) >= top_k:
                 break
-        top_score = float(1.0 - rows[0][2]) if metric == "cosine" else float(-rows[0][2])
+        top_score = (
+            float(1.0 - rows[0][2]) if metric == "cosine" else float(-rows[0][2])
+        )
         return ranked, top_score
 
     if mode != "vote":
@@ -134,7 +159,9 @@ def collapse_utterance_hits(
     first_position: dict[str, int] = {}
     for position, (_, speaker_id, distance) in enumerate(rows):
         vote_counts[speaker_id] = vote_counts.get(speaker_id, 0) + 1
-        best_distance[speaker_id] = min(best_distance.get(speaker_id, float("inf")), float(distance))
+        best_distance[speaker_id] = min(
+            best_distance.get(speaker_id, float("inf")), float(distance)
+        )
         first_position.setdefault(speaker_id, position)
 
     ordered = sorted(
@@ -148,7 +175,11 @@ def collapse_utterance_hits(
     )
     ranked = ordered[:top_k]
     top_speaker = ranked[0]
-    top_score = float(1.0 - best_distance[top_speaker]) if metric == "cosine" else float(-best_distance[top_speaker])
+    top_score = (
+        float(1.0 - best_distance[top_speaker])
+        if metric == "cosine"
+        else float(-best_distance[top_speaker])
+    )
     return ranked, top_score
 
 
@@ -158,7 +189,7 @@ def query_utterances(
     metric: str,
     limit: int,
     gender: str | None = None,
-    nationality: str | None = None,
+    nationalities: list[str] | None = None,
     cluster_ids: list[int] | None = None,
 ) -> list[tuple[int, str, float]]:
     operator = metric_operator(metric)
@@ -170,9 +201,9 @@ def query_utterances(
     if gender is not None:
         conditions.append("s.gender = %s")
         params.append(gender)
-    if nationality is not None:
-        conditions.append("s.nationality = %s")
-        params.append(nationality)
+    if nationalities:
+        conditions.append("s.nationality = ANY(%s)")
+        params.append(nationalities)
     if cluster_ids is not None:
         conditions.append("ae.cluster_id = ANY(%s)")
         params.append(cluster_ids)
@@ -211,7 +242,11 @@ def subset_centroids(
     if not allowed_ids:
         return speaker_ids, speaker_vectors
 
-    indices = [speaker_index[speaker_id] for speaker_id in allowed_ids if speaker_id in speaker_index]
+    indices = [
+        speaker_index[speaker_id]
+        for speaker_id in allowed_ids
+        if speaker_id in speaker_index
+    ]
     if not indices:
         return speaker_ids, speaker_vectors
 
