@@ -25,15 +25,21 @@ def load_test_queries(pt_path: Path) -> tuple[np.ndarray, list[str], list[str]]:
 
     data = torch.load(pt_path, map_location="cpu")
     if not isinstance(data, dict):
-        raise ValueError("Loaded .pt file must be a dict containing embeddings and speaker labels.")
+        raise ValueError(
+            "Loaded .pt file must be a dict containing embeddings and speaker labels."
+        )
 
     embeddings = data.get("embeddings", data.get("x"))
     if embeddings is None:
-        raise ValueError("Loaded .pt file is missing an embeddings tensor under 'embeddings' or 'x'.")
+        raise ValueError(
+            "Loaded .pt file is missing an embeddings tensor under 'embeddings' or 'x'."
+        )
 
     speakers = data.get("speakers")
     if speakers is None:
-        raise ValueError("Loaded .pt file must include a 'speakers' list for ground truth speaker labels.")
+        raise ValueError(
+            "Loaded .pt file must include a 'speakers' list for ground truth speaker labels."
+        )
 
     file_paths = data.get("processed_files") or data.get("file_paths") or []
 
@@ -51,7 +57,11 @@ def load_test_queries(pt_path: Path) -> tuple[np.ndarray, list[str], list[str]]:
         )
 
     normalized = normalize(embeddings, norm="l2", axis=1)
-    return normalized.astype(np.float32), [str(value) for value in speakers], [str(value) for value in file_paths]
+    return (
+        normalized.astype(np.float32),
+        [str(value) for value in speakers],
+        [str(value) for value in file_paths],
+    )
 
 
 def parse_pgvector(value: object) -> np.ndarray:
@@ -96,7 +106,7 @@ def load_speaker_metadata(conn) -> dict[str, SpeakerMetadata]:
 
 def load_speaker_centroids(conn) -> tuple[list[str], np.ndarray]:
     query = """
-        SELECT speaker_id, AVG(embedding)::vector(192) AS centroid_vector
+        SELECT speaker_id, AVG(embedding)::vector AS centroid_vector
         FROM audio_embeddings
         GROUP BY speaker_id
         ORDER BY speaker_id;
@@ -122,7 +132,10 @@ def load_metadata_centroids(conn) -> dict[str, tuple[list[str], np.ndarray]]:
         FROM metadata_centroids
         ORDER BY category, category_value;
     """
-    grouped: dict[str, list[tuple[str, np.ndarray]]] = {"gender": [], "gender_nationality": []}
+    grouped: dict[str, list[tuple[str, np.ndarray]]] = {
+        "gender": [],
+        "gender_nationality": [],
+    }
     with conn.cursor() as cur:
         cur.execute(query)
         for category, category_value, vector_value in cur.fetchall():
@@ -179,13 +192,17 @@ def load_cluster_memberships(conn) -> dict[int, set[str]]:
     return memberships
 
 
-def build_metadata_groups(metadata: dict[str, SpeakerMetadata]) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
+def build_metadata_groups(
+    metadata: dict[str, SpeakerMetadata],
+) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
     by_gender: dict[str, list[str]] = {}
     by_gender_nat: dict[str, list[str]] = {}
 
     for speaker_id, info in metadata.items():
         by_gender.setdefault(info.gender, []).append(speaker_id)
-        by_gender_nat.setdefault(f"{info.gender}:{info.nationality}", []).append(speaker_id)
+        by_gender_nat.setdefault(f"{info.gender}:{info.nationality}", []).append(
+            speaker_id
+        )
 
     for values in by_gender.values():
         values.sort()
