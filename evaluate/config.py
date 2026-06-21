@@ -1,15 +1,32 @@
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
 ROOT_DIR = BASE_DIR.parent
-DEFAULT_TEST_EMBEDDINGS = ROOT_DIR / "data" / "voxceleb_test_embeddings.pt"
-DEFAULT_OUTPUT_FILE = ROOT_DIR / "results" / "speaker_search_evaluation.json"
+
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+from configs.models import get_model, DEFAULT_MODEL, ModelSpec  # noqa: E402
+
+# Embedding .pt files live alongside the DB data, not under the audio data dir.
+DATA_DIR = ROOT_DIR / "data_base" / "data"
+RESULTS_DIR = ROOT_DIR / "results"
 DEFAULT_TOP_K = 10
 DEFAULT_CANDIDATE_LIMIT = 25
 DEFAULT_METRICS = ("cosine",)
+
+
+def test_embeddings_path(spec: ModelSpec) -> Path:
+    """Path to a model's held-out test/probe .pt file."""
+    return DATA_DIR / spec.test_pt_file
+
+
+def default_output_file(spec: ModelSpec) -> Path:
+    """Per-model results path so models never overwrite each other."""
+    return RESULTS_DIR / f"speaker_search_evaluation_{spec.name}.json"
 
 
 def load_environment() -> dict[str, str]:
