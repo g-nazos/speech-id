@@ -6,7 +6,7 @@ import argparse
 import torch
 import torchaudio
 from torch.utils.data import DataLoader
-from transformers import WavLMModel, AutoFeatureExtractor
+from transformers import WavLMModel, WavLMForXVector, AutoFeatureExtractor
 
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, project_root)
@@ -27,8 +27,12 @@ def mean_pool(hidden, frame_mask):
     return (hidden * m).sum(dim=1) / m.sum(dim=1).clamp(min=1e-9)
 
 
-def encode_waveforms(waveforms_16k, model, feature_extractor, device):
-    """Encode a list of 16 kHz 1-D waveforms -> (B, 768), with OOM fallback."""
+def encode_waveforms(waveforms_16k, model, feature_extractor, device, head):
+    """Encode a list of 16 kHz 1-D waveforms -> (B, dim), with OOM fallback.
+
+    head="meanpool": mean-pool the 12 transformer layers (-> 768).
+    head="xvector":  use WavLMForXVector's own TDNN+stats-pool head (-> 512).
+    """
     inputs = feature_extractor(
         [w.numpy() for w in waveforms_16k],
         sampling_rate=TARGET_SR,
@@ -40,6 +44,9 @@ def encode_waveforms(waveforms_16k, model, feature_extractor, device):
     mask = inputs["attention_mask"].to(device)
 
     try:
+        if head == "xvector":
+            out = model(input_values=x, attention_mask=mask)
+            return out.embeddings.cpu()  # (B, xvector_output_dim) = 512
         out = model(input_values=x, attention_mask=mask, output_hidden_states=True)
         frame_mask = model._get_feature_vector_attention_mask(
             out.last_hidden_state.shape[1], attention_mask=mask
@@ -57,7 +64,9 @@ def encode_waveforms(waveforms_16k, model, feature_extractor, device):
             )
             model.to("cpu")
             try:
-                emb = encode_waveforms(waveforms_16k, model, feature_extractor, "cpu")
+                emb = encode_waveforms(
+                    waveforms_16k, model, feature_extractor, "cpu", head
+                )
             finally:
                 model.to(device)
             return emb
@@ -68,8 +77,12 @@ def encode_waveforms(waveforms_16k, model, feature_extractor, device):
             mid,
             len(waveforms_16k) - mid,
         )
-        left = encode_waveforms(waveforms_16k[:mid], model, feature_extractor, device)
-        right = encode_waveforms(waveforms_16k[mid:], model, feature_extractor, device)
+        left = encode_waveforms(
+            waveforms_16k[:mid], model, feature_extractor, device, head
+        )
+        right = encode_waveforms(
+            waveforms_16k[mid:], model, feature_extractor, device, head
+        )
         return torch.cat([left, right], dim=0)
 
 
@@ -141,13 +154,18 @@ def main(
         num_workers=data_loader_workers,
     )
 
-    logger.info("Loading WavLM model '%s'...", spec.source)
+    logger.info("Loading WavLM model '%s' (head=%s)...", spec.source, spec.head)
     feature_extractor = AutoFeatureExtractor.from_pretrained(spec.source)
-    model = WavLMModel.from_pretrained(spec.source).to(device).eval()
-    if model.config.hidden_size != spec.dim:
+    if spec.head == "xvector":
+        model = WavLMForXVector.from_pretrained(spec.source).to(device).eval()
+        produced_dim = model.config.xvector_output_dim
+    else:
+        model = WavLMModel.from_pretrained(spec.source).to(device).eval()
+        produced_dim = model.config.hidden_size
+    if produced_dim != spec.dim:
         logger.warning(
-            "Model hidden_size %d != registry dim %d for '%s'.",
-            model.config.hidden_size,
+            "Model output dim %d != registry dim %d for '%s'.",
+            produced_dim,
             spec.dim,
             spec.name,
         )
@@ -181,7 +199,9 @@ def main(
                     wf = wf[:max_samples]
                 resampled.append(wf)
 
-            embeddings = encode_waveforms(resampled, model, feature_extractor, device)
+            embeddings = encode_waveforms(
+                resampled, model, feature_extractor, device, spec.head
+            )
 
             all_embeddings.append(embeddings)
             all_speakers.extend(speaker_ids)

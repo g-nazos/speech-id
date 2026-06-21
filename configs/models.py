@@ -12,6 +12,7 @@ class ModelSpec:
     schema: str  # Postgres schema isolating this model's tables
     pt_file: str  # enrollment .pt filename under data_base/data/
     test_pt_file: str  # held-out test/probe .pt filename under data_base/data/
+    head: str = "meanpool"  # extraction method: "ecapa", "meanpool", or "xvector"
 
 
 MODELS: dict[str, ModelSpec] = {
@@ -25,6 +26,7 @@ MODELS: dict[str, ModelSpec] = {
         schema="public",
         pt_file="voxceleb_embeddings.pt",
         test_pt_file="voxceleb_test_embeddings.pt",
+        head="ecapa",
     ),
     # wavlm: per-utterance embedding = mean-pool of the 12 transformer layers'
     # mean-pooled hidden states -> 768-dim. Uses the base WavLM (no SV head).
@@ -35,6 +37,19 @@ MODELS: dict[str, ModelSpec] = {
         schema="wavlm",
         pt_file="voxceleb_embeddings_wavlm.pt",
         test_pt_file="voxceleb_test_embeddings_wavlm.pt",
+        head="meanpool",
+    ),
+    # wavlm_xvector: the VoxCeleb-fine-tuned x-vector speaker head. The model's
+    # own TDNN + statistics pooling produces a 512-dim embedding (out.embeddings).
+    # Trained for speaker discrimination -> the fair comparison vs ECAPA.
+    "wavlm_xvector": ModelSpec(
+        name="wavlm_xvector",
+        source="microsoft/wavlm-base-plus-sv",
+        dim=512,
+        schema="wavlm_xvector",
+        pt_file="voxceleb_embeddings_wavlm_xvector.pt",
+        test_pt_file="voxceleb_test_embeddings_wavlm_xvector.pt",
+        head="xvector",
     ),
 }
 
