@@ -18,7 +18,9 @@ def collect_database_summary(conn) -> dict[str, int]:
     """
     with conn.cursor() as cur:
         cur.execute(query)
-        speakers, audio_embeddings, metadata_centroids, cluster_centroids = cur.fetchone()
+        speakers, audio_embeddings, metadata_centroids, cluster_centroids = (
+            cur.fetchone()
+        )
     return {
         "speakers": int(speakers),
         "audio_embeddings": int(audio_embeddings),
@@ -32,6 +34,11 @@ def render_report(report: dict[str, object]) -> str:
     lines.append("# Speaker Identification Search Evaluation")
     lines.append("")
     lines.append(f"Generated: {report['timestamp']}")
+    if report.get("model"):
+        lines.append(
+            f"Model: {report['model']} (schema={report.get('schema')}, "
+            f"dim={report.get('embedding_dim')})"
+        )
     lines.append(f"Test file: {report['test_file']}")
     lines.append(f"Queries evaluated: {report['query_count']}")
     lines.append(f"Distance metrics: {', '.join(report['metrics'])}")
@@ -48,7 +55,9 @@ def render_report(report: dict[str, object]) -> str:
     for metric_name, rows in report["results_by_metric"].items():
         lines.append(f"## {metric_name.title()} Distance")
         lines.append("")
-        lines.append("| Architecture | Aggregation | Cluster Probes | Accuracy (%) | Hit@K (%) | Precision (%) | Recall (%) | F1 (%) | Avg Search Time (ms) |")
+        lines.append(
+            "| Architecture | Aggregation | Probes | Accuracy (%) | Hit@K (%) | Precision (%) | Recall (%) | F1 (%) | Avg Search Time (ms) |"
+        )
         lines.append("| --- | --- | --- | --- | --- | --- | --- | --- | --- |")
         for row in rows:
             lines.append(
