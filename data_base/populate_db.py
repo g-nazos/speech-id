@@ -1,15 +1,26 @@
 import os
+import sys
 import csv
 import json
 import struct
+import argparse
 import torch
 import psycopg
 import numpy as np
+from psycopg import sql
 from dotenv import load_dotenv
 from sklearn.cluster import MiniBatchKMeans
 from sklearn.preprocessing import normalize
 
-load_dotenv()
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(BASE_DIR)
+DATA_DIR = os.path.join(BASE_DIR, "data")
+SCHEMA_TEMPLATE_PATH = os.path.join(BASE_DIR, "schema.template.sql")
+
+sys.path.insert(0, PROJECT_ROOT)
+from configs.models import get_model, MODELS, ModelSpec  # noqa: E402
+
+load_dotenv(os.path.join(BASE_DIR, ".env"))
 
 DB_USER = os.getenv("DB_USER")
 DB_PASSWORD = os.getenv("DB_PASSWORD")
@@ -19,11 +30,35 @@ DB_PORT = os.getenv("DB_PORT")
 
 DB_CONN_STRING = f"host={DB_HOST} port={DB_PORT} dbname={DB_NAME} user={DB_USER} password={DB_PASSWORD}"
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.join(BASE_DIR, "data")
-
-PT_FILE_PATH = os.path.join(DATA_DIR, os.getenv("PT_FILE_NAME"))
 METADATA_CSV_PATH = os.path.join(DATA_DIR, os.getenv("METADATA_CSV_NAME"))
+
+
+def connect(schema):
+    """Open a connection scoped to a model's schema via search_path.
+
+    With search_path set, all the unqualified table names below (speakers,
+    audio_embeddings, ...) resolve to <schema>.<table>, so the same SQL serves
+    every model without modification.
+    """
+    conn = psycopg.connect(DB_CONN_STRING)
+    with conn.cursor() as cur:
+        cur.execute(
+            sql.SQL("SET search_path TO {}, public;").format(sql.Identifier(schema))
+        )
+    return conn
+
+
+def ensure_schema(schema, dim):
+    """Create the model's schema/tables/indexes (idempotent), templated by dim."""
+    with open(SCHEMA_TEMPLATE_PATH, encoding="utf-8") as f:
+        ddl = f.read().format(schema=schema, dim=dim)
+
+    with psycopg.connect(DB_CONN_STRING) as conn:
+        with conn.cursor() as cur:
+            cur.execute("CREATE EXTENSION IF NOT EXISTS vector;")
+            cur.execute(ddl)
+        conn.commit()
+    print(f"Ensured schema '{schema}' with VECTOR({dim}) columns.")
 
 
 def load_metadata_lookup(csv_path):
@@ -64,19 +99,19 @@ def load_metadata_lookup(csv_path):
     return metadata_lookup
 
 
-def compute_and_save_centroids(cur):
-    """Computes a two-layer hierarchy using existing metadata_centroids columns (Phase 2)."""
+def compute_and_save_centroids(cur, dim):
+    """Computes a two-layer hierarchy into metadata_centroids (Phase 2)."""
     print("Generating hierarchical tree centroids...")
 
     cur.execute("TRUNCATE TABLE metadata_centroids;")
 
     # Layer 1: Global Gender Centroids
-    gender_query = """
+    gender_query = f"""
         INSERT INTO metadata_centroids (category, category_value, centroid_vector)
-        SELECT 
+        SELECT
             'gender' as category,
             s.gender as category_value,
-            avg(ae.embedding)::vector(192) as centroid_vector
+            avg(ae.embedding)::vector({dim}) as centroid_vector
         FROM audio_embeddings ae
         JOIN speakers s ON ae.speaker_id = s.speaker_id
         WHERE s.gender IS NOT NULL AND s.gender != 'unknown'
@@ -85,12 +120,12 @@ def compute_and_save_centroids(cur):
     cur.execute(gender_query)
 
     # Layer 2: Dependent Gender-Nationality Centroids (e.g., 'male:US')
-    gender_nat_query = """
+    gender_nat_query = f"""
         INSERT INTO metadata_centroids (category, category_value, centroid_vector)
-        SELECT 
+        SELECT
             'gender_nationality' as category,
             CONCAT(s.gender, ':', s.nationality) as category_value,
-            avg(ae.embedding)::vector(192) as centroid_vector
+            avg(ae.embedding)::vector({dim}) as centroid_vector
         FROM audio_embeddings ae
         JOIN speakers s ON ae.speaker_id = s.speaker_id
         WHERE s.gender != 'unknown' AND s.nationality != 'unknown'
@@ -100,27 +135,37 @@ def compute_and_save_centroids(cur):
     print("Centroid tree generation completed.")
 
 
-def load_data_to_postgres():
-    """Populates the speakers and audio_embeddings tables from raw source files (Phase 1)."""
-    if not PT_FILE_PATH or not os.path.exists(PT_FILE_PATH):
-        print(f"Error: Embeddings file not found at: '{PT_FILE_PATH}'.")
+def load_data_to_postgres(spec: ModelSpec, pt_path: str):
+    """Populates speakers and audio_embeddings from raw source files (Phase 1)."""
+    if not pt_path or not os.path.exists(pt_path):
+        print(f"Error: Embeddings file not found at: '{pt_path}'.")
         return
 
     metadata_map = load_metadata_lookup(METADATA_CSV_PATH)
 
     print("Loading tensor data into memory...")
-    data = torch.load(PT_FILE_PATH, map_location=torch.device("cpu"))
+    data = torch.load(pt_path, map_location=torch.device("cpu"))
 
     embeddings = data["embeddings"].tolist()
     speakers = data["speakers"]
     processed_files = data["processed_files"]
 
     total_records = len(speakers)
-    print(f"Processing {total_records} records...")
+    if total_records and len(embeddings[0]) != spec.dim:
+        print(
+            f"Error: embeddings have dim {len(embeddings[0])} but model '{spec.name}' "
+            f"expects {spec.dim}. Check the registry / .pt file."
+        )
+        return
+    print(f"Processing {total_records} records into schema '{spec.schema}'...")
 
     try:
-        with psycopg.connect(DB_CONN_STRING) as conn:
+        with connect(spec.schema) as conn:
             with conn.cursor() as cur:
+
+                # Clean rebuild: COPY appends with no dedup, so wipe first.
+                print("Truncating existing audio_embeddings for a clean rebuild...")
+                cur.execute("TRUNCATE audio_embeddings RESTART IDENTITY;")
 
                 unique_speakers = set(speakers)
                 speaker_rows = []
@@ -163,7 +208,7 @@ def load_data_to_postgres():
 
                         copy.write_row([spk_bytes, path_bytes, vector_binary_data])
 
-                compute_and_save_centroids(cur)
+                compute_and_save_centroids(cur, spec.dim)
                 conn.commit()
 
         print("Database population pipeline finished successfully.")
@@ -175,7 +220,7 @@ def load_data_to_postgres():
 
 
 def fetch_embeddings(cur):
-    """Helper: Fetches all committed embeddings and their generated IDs from PostgreSQL."""
+    """Helper: Fetches all committed embeddings and their generated IDs."""
     print("Fetching embeddings from PostgreSQL for clustering...")
     cur.execute("SELECT id, embedding::text FROM audio_embeddings;")
     rows = cur.fetchall()
@@ -187,10 +232,10 @@ def fetch_embeddings(cur):
     return ids, raw_vectors
 
 
-def build_unsupervised_clusters(num_clusters=256):
-    """Executes Phase 3: Unsupervised Spherical K-Means Clustering on existing database entries."""
+def build_unsupervised_clusters(spec: ModelSpec, num_clusters=256):
+    """Phase 3: Unsupervised Spherical K-Means Clustering on existing entries."""
     try:
-        with psycopg.connect(DB_CONN_STRING) as conn:
+        with connect(spec.schema) as conn:
             with conn.cursor() as cur:
 
                 # Step 1: Pull database records into NumPy space
@@ -265,9 +310,42 @@ def build_unsupervised_clusters(num_clusters=256):
         print(f"An unexpected clustering error occurred: {e}")
 
 
-if __name__ == "__main__":
-    # 1. Runs Phase 1 (Ingestion) & Phase 2 (Hierarchical Metadata Mapping)
-    load_data_to_postgres()
+def main():
+    parser = argparse.ArgumentParser(
+        description="Populate a model's isolated schema with embeddings, metadata "
+        "centroids, and K-means clusters."
+    )
+    parser.add_argument(
+        "--model",
+        required=True,
+        choices=list(MODELS),
+        help="Which embedding model's schema to populate (see configs/models.py). "
+        "Required, so a bare run can never rebuild the existing public/ecapa schema.",
+    )
+    parser.add_argument(
+        "--pt-file",
+        default=None,
+        help="Override the enrollment .pt filename (under data_base/data/).",
+    )
+    parser.add_argument("--clusters", type=int, default=256)
+    args = parser.parse_args()
 
-    # 2. Runs Phase 3 (Unsupervised Clustering Partitioning via K-Means)
-    build_unsupervised_clusters(num_clusters=256)
+    spec = get_model(args.model)
+    pt_file = args.pt_file or spec.pt_file
+    pt_path = os.path.join(DATA_DIR, pt_file)
+    print(
+        f"Model: {spec.name} | schema: {spec.schema} | dim: {spec.dim} | pt: {pt_file}"
+    )
+
+    # 0. Ensure the per-model schema/tables exist (templated by dimension).
+    ensure_schema(spec.schema, spec.dim)
+
+    # 1. Phase 1 (Ingestion) & Phase 2 (Hierarchical Metadata Mapping)
+    load_data_to_postgres(spec, pt_path)
+
+    # 2. Phase 3 (Unsupervised Clustering Partitioning via K-Means)
+    build_unsupervised_clusters(spec, num_clusters=args.clusters)
+
+
+if __name__ == "__main__":
+    main()
