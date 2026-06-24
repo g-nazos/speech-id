@@ -197,3 +197,5 @@ data_base/data
 pretrained_models
 /scripts/_verify_split.py
 *.dump
+*.wav
+*.dbml
