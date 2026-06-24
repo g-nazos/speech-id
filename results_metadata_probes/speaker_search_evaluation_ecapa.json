@@ -1,0 +1,159 @@
+{
+  "timestamp": "2026-06-24T21:23:30.514210Z",
+  "model": "ecapa",
+  "schema": "public",
+  "embedding_dim": 192,
+  "test_file": "/home/automaton/pycharm/speech-id/data_base/data/voxceleb_test_embeddings.pt",
+  "query_count": 8676,
+  "metrics": [
+    "cosine"
+  ],
+  "top_k": 10,
+  "candidate_limit": 25,
+  "utterance_mode": "all",
+  "database_summary": {
+    "speakers": 1251,
+    "audio_embeddings": 144840,
+    "metadata_centroids": 58,
+    "cluster_centroids": 256
+  },
+  "results_by_metric": {
+    "cosine": [
+      {
+        "architecture": "metadata_hierarchy",
+        "aggregation": "speaker_centroid",
+        "metric": "cosine",
+        "cluster_probes": 2,
+        "avg_latency_ms": 0.043711866643614566,
+        "metrics": {
+          "top1_accuracy": 47.70631627478101,
+          "hit_k": 47.77547256800369,
+          "precision": 47.66847824179363,
+          "recall": 46.75290429888308,
+          "f1": 41.30690028873013,
+          "eer": 0.14962476255605903
+        }
+      },
+      {
+        "architecture": "metadata_hierarchy",
+        "aggregation": "closest",
+        "metric": "cosine",
+        "cluster_probes": 2,
+        "avg_latency_ms": 32.790389507607195,
+        "metrics": {
+          "top1_accuracy": 47.7524204702628,
+          "hit_k": 47.786998616874136,
+          "precision": 48.70172222923734,
+          "recall": 46.830433312087095,
+          "f1": 41.838336068039474,
+          "eer": 0.3916408003548841
+        }
+      },
+      {
+        "architecture": "metadata_hierarchy",
+        "aggregation": "vote",
+        "metric": "cosine",
+        "cluster_probes": 2,
+        "avg_latency_ms": 33.00147501452282,
+        "metrics": {
+          "top1_accuracy": 47.729368372521904,
+          "hit_k": 47.786998616874136,
+          "precision": 48.5698307202988,
+          "recall": 46.792872324462614,
+          "f1": 41.84514061240686,
+          "eer": 0.43784597353434757
+        }
+      },
+      {
+        "architecture": "metadata_hierarchy",
+        "aggregation": "speaker_centroid",
+        "metric": "cosine",
+        "cluster_probes": 5,
+        "avg_latency_ms": 0.07151926717381282,
+        "metrics": {
+          "top1_accuracy": 65.85984324573536,
+          "hit_k": 65.98662978331028,
+          "precision": 58.89272536601522,
+          "recall": 64.20036364006323,
+          "f1": 56.447903985656275,
+          "eer": 0.20628816721052126
+        }
+      },
+      {
+        "architecture": "metadata_hierarchy",
+        "aggregation": "closest",
+        "metric": "cosine",
+        "cluster_probes": 5,
+        "avg_latency_ms": 33.35631244744122,
+        "metrics": {
+          "top1_accuracy": 65.90594744121715,
+          "hit_k": 65.99815583218073,
+          "precision": 60.6405668519025,
+          "recall": 64.24458596528427,
+          "f1": 57.38730277782265,
+          "eer": 0.4039590290651847
+        }
+      },
+      {
+        "architecture": "metadata_hierarchy",
+        "aggregation": "vote",
+        "metric": "cosine",
+        "cluster_probes": 5,
+        "avg_latency_ms": 33.5243664165514,
+        "metrics": {
+          "top1_accuracy": 65.8944213923467,
+          "hit_k": 65.99815583218073,
+          "precision": 60.87552267984665,
+          "recall": 64.24699300323935,
+          "f1": 57.42815217392442,
+          "eer": 0.4039256581241518
+        }
+      },
+      {
+        "architecture": "metadata_hierarchy",
+        "aggregation": "speaker_centroid",
+        "metric": "cosine",
+        "cluster_probes": 10,
+        "avg_latency_ms": 0.09698381258644537,
+        "metrics": {
+          "top1_accuracy": 73.87044721069617,
+          "hit_k": 74.07791609036423,
+          "precision": 65.65822223499833,
+          "recall": 72.9316224182339,
+          "f1": 64.82257917165236,
+          "eer": 0.26495947506549394
+        }
+      },
+      {
+        "architecture": "metadata_hierarchy",
+        "aggregation": "closest",
+        "metric": "cosine",
+        "cluster_probes": 10,
+        "avg_latency_ms": 30.487961930497928,
+        "metrics": {
+          "top1_accuracy": 73.93960350391886,
+          "hit_k": 74.08944213923468,
+          "precision": 67.83381324443097,
+          "recall": 72.87858921454475,
+          "f1": 65.91236292033446,
+          "eer": 0.4393795915215576
+        }
+      },
+      {
+        "architecture": "metadata_hierarchy",
+        "aggregation": "vote",
+        "metric": "cosine",
+        "cluster_probes": 10,
+        "avg_latency_ms": 30.538703081028125,
+        "metrics": {
+          "top1_accuracy": 73.92807745504841,
+          "hit_k": 74.08944213923468,
+          "precision": 67.5499988940663,
+          "recall": 72.94494509342707,
+          "f1": 65.85677569438201,
+          "eer": 0.439315853334756
+        }
+      }
+    ]
+  }
+}
