@@ -3,15 +3,40 @@
 This folder contains the local PostgreSQL database setup used by the Speech-ID pipeline.
 It stores VoxCeleb speaker embeddings, speaker metadata, computed metadata centroids, and unsupervised cluster centroids.
 
+## Multi-model architecture
+
+The pipeline compares several embedding models, and their vectors have different
+dimensions. To keep vectors of different sizes out of the same column, **each
+model lives in its own PostgreSQL schema** with an identical set of tables. The
+registry in `configs/models.py` defines them:
+
+| model           | schema          | dim | extractor head |
+|-----------------|-----------------|-----|----------------|
+| `ecapa`         | `public`        | 192 | ecapa          |
+| `wavlm`         | `wavlm`         | 768 | meanpool       |
+| `wavlm_xvector` | `wavlm_xvector` | 512 | xvector        |
+
+`ecapa` is the original, already-populated model, so it reuses the default
+`public` schema untouched. New models get their own schemas. Queries run with
+`SET search_path TO <schema>, public`, so the same unqualified SQL serves every
+model.
+
 ## Contents
 
 - `docker-compose.yml` — starts a PostgreSQL container with `pgvector` enabled.
-- `init.sql` — creates the database schema, tables, and indexes.
-- `populate_db.py` — ingests embeddings, computes metadata centroids, and runs clustering.
+- `init.sql` — Docker entrypoint init: enables the `pgvector` extension only (runs once on an empty volume).
+- `schema.template.sql` — per-model DDL template; `{schema}` and `{dim}` are filled in at populate time to create each model's tables/indexes.
+- `configs/models.py` — registry of models (schema, dimension, source, extractor head, `.pt` files).
+- `populate_db.py` — ingests one model's embeddings, computes metadata centroids, and runs clustering.
 - `schema_overview.py` — reads the live database and generates a Markdown schema/contents overview.
+- `schema.dbml` — dbdiagram.io diagram of all model schemas.
 - `.env` — database credentials and source file names.
 
 ## Database Schema
+
+The tables below are created **per model schema** by `ensure_schema()` from
+`schema.template.sql`. `VECTOR(dim)` is templated by the model's dimension
+(192 / 768 / 512); the examples show the `ecapa`/`public` case (192).
 
 ### `speakers`
 Stores speaker metadata.
@@ -67,7 +92,12 @@ Current use:
 
 ## How `populate_db.py` works
 
-The script has three phases:
+The script populates **one model's schema per run**, selected with `--model`
+(see `configs/models.py`). A bare run with no `--model` is rejected on purpose,
+so it can never accidentally rebuild the existing `public`/`ecapa` schema. It
+first calls `ensure_schema(spec.schema, spec.dim)` to create the schema, tables,
+and indexes (idempotent, templated by the model's dimension), then runs three
+phases:
 
 1. `load_data_to_postgres()`
    - Loads the `.pt` embeddings file and VoxCeleb metadata CSV.
@@ -117,7 +147,11 @@ and macOS. Place the `.pt` embeddings file and `vox1_meta.csv` in `data_base/dat
 ```bash
 cd data_base
 docker-compose up -d
-uv run populate_db.py
+# Populate a specific model's schema (--model is required):
+uv run populate_db.py --model ecapa
+uv run populate_db.py --model wavlm
+uv run populate_db.py --model wavlm_xvector
+```
 
 Generate a read-only Markdown overview of the live database schema and table contents:
 
@@ -126,7 +160,6 @@ uv run python schema_overview.py --output-file ../results/database_schema_overvi
 ```
 
 Omit `--output-file` to print the report only to the terminal.
-```
 
 ## Evaluation
 
@@ -143,7 +176,7 @@ Use `uv run` (or the project's `.venv` interpreter) so dependencies like
 
 ## Notes
 
-- `init.sql` enables the `vector` extension and creates the complete schema used by the script.
+- `init.sql` only enables the `vector` extension. The per-model tables/indexes are created on demand by `populate_db.py` from `schema.template.sql` (templated by each model's dimension).
 - `cluster_centroids` is not just a placeholder; it is populated by the clustering phase.
 - `metadata_centroids` is recomputed from the current contents of `audio_embeddings`.
 - The current ingest path uses PostgreSQL binary COPY for `audio_embeddings`.
