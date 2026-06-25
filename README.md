@@ -1,10 +1,27 @@
 # speech-id
 
-Speaker identification using the VoxCeleb dataset and SpeechBrain's ECAPA-TDNN model. Extracts fixed-size speaker embeddings from raw audio, which can then be used for speaker recognition or clustering.
+Speaker identification on the VoxCeleb dataset. Fixed-size speaker embeddings are
+extracted from raw audio with **three models**, stored in PostgreSQL + `pgvector`,
+and compared across several search strategies. The models are:
+
+| model           | source                              | dim | extractor head |
+|-----------------|-------------------------------------|-----|----------------|
+| `ecapa`         | `speechbrain/spkrec-ecapa-voxceleb` | 192 | ECAPA-TDNN     |
+| `wavlm`         | `microsoft/wavlm-base-plus`         | 768 | mean-pool      |
+| `wavlm_xvector` | `microsoft/wavlm-base-plus-sv`      | 512 | x-vector       |
 
 ## How it works
 
-`scripts/embeding_extractor.py` walks a VoxCeleb-structured data directory, loads `.wav` files in batches, resamples to 16 kHz on CUDA if needed, and encodes each clip into a 192-dim embedding via the pretrained `speechbrain/spkrec-ecapa-voxceleb` model. All embeddings and their speaker labels are saved to a single `.pt` file.
+1. **Extraction** — `scripts/embeding_extractor.py` (ECAPA) and
+   `scripts/wavlm_extractor.py --model {wavlm,wavlm_xvector}` walk a
+   VoxCeleb-structured directory, batch-load `.wav` files, resample to 16 kHz, and
+   encode each clip into an embedding. Each model's embeddings + speaker labels are
+   saved to its own `.pt` file.
+2. **Database** — `data_base/populate_db.py --model <name>` loads a model's
+   embeddings into that model's PostgreSQL schema, computes metadata centroids, and
+   builds K-means cluster centroids.
+3. **Evaluation** — `evaluate/` compares brute-force, metadata-hierarchical, and
+   cluster-routed search per model and writes a JSON report.
 
 ## Requirements
 
@@ -152,14 +169,17 @@ EMBEDDING_SAVE_DIR = voxceleb_embeddings.pt
 
 ## Usage
 
+Extract embeddings for each model (run from the project root):
+
 ```bash
-# Run from the project root
-uv run python scripts/embeding_extractor.py
+uv run python scripts/embeding_extractor.py                          # ecapa
+uv run python scripts/wavlm_extractor.py --model wavlm               # wavlm (mean-pool)
+uv run python scripts/wavlm_extractor.py --model wavlm_xvector       # wavlm x-vector
 ```
 
-The script defaults to `split=vox1_dev_wav`, `batch_size=16`, `target_sample_rate=16000`, `max_speakers=100`. To change these, edit the `main(...)` call at the bottom of the script.
+The ECAPA script defaults to `split=vox1_dev_wav`, `batch_size=16`, `target_sample_rate=16000`; edit the `main(...)` call at the bottom to change them. The WavLM extractor takes `--split`, `--batch-size`, `--workers`, and `--max-seconds`.
 
-The pretrained model is downloaded automatically on first run to `pretrained_models/spkrec-ecapa-voxceleb/`.
+Pretrained models are downloaded automatically on first run (ECAPA to `pretrained_models/`, the WavLM models to the HuggingFace cache).
 
 Logs are written to `scripts/logs/running_logs.log` and stdout.
 
@@ -226,11 +246,11 @@ Useful options:
 
 ## Output
 
-A `.pt` file (path set in config) containing:
+Each extractor writes a `.pt` file containing:
 
 ```python
 {
-    "embeddings": torch.Tensor,  # shape (N, 192)
+    "embeddings": torch.Tensor,  # shape (N, dim) — 192 ecapa / 768 wavlm / 512 wavlm_xvector
     "speakers":   list[str],     # length N, e.g. ["id10032", ...]
 }
 ```
