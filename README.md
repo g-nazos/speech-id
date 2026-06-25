@@ -31,9 +31,8 @@ and compared across several search strategies. The models are:
 
 ## Reproduce with Docker
 
-Requires only Docker (no GPU, no raw audio). The database is shipped as a
-pre-populated dump that restores in ~30 s at first startup, so there is no slow
-populate step — you just bring up the DB and run the evaluation on demand.
+Requires only Docker (no GPU, no raw audio). The database is shared as a
+pgdump that restores at first startup.
 
 **1. Clone and configure**
 
@@ -47,11 +46,12 @@ cp data_base/.env.example data_base/.env          # demo creds; edit if desired
 and place the files like so:
 
 ```
-data_base/db_dump/voxceleb_db.dump                  # the pre-populated database
-data_base/data/voxceleb_test_embeddings.pt          # ecapa test/probe set
-data_base/data/voxceleb_test_embeddings_wavlm.pt    # wavlm test/probe set
+data_base/db_dump/voxceleb_db.dump                  
+data_base/data/voxceleb_test_embeddings.pt          # ecapa test set
+data_base/data/voxceleb_test_embeddings_wavlm.pt    # wavlm test set
 data_base/data/voxceleb_test_embeddings_wavlm_xvector.pt
 ```
+The files above are the necessary ones for evaluation.
 
 **3. Start the database** (auto-restores the dump on first run, ~30 s):
 
@@ -62,15 +62,15 @@ docker compose up -d --build db
 **4. Run the evaluation on demand.** Results are written to `./results/`.
 
 ```bash
-# Quick check — one model, limited queries (~30 s):
+# Quick check — one model, limited queries:
 docker compose run --rm evaluate \
   uv run --no-sync evaluate/evaluate_search.py --model ecapa --max-queries 500
 
 # One model, full (exact, matches committed results):
 docker compose run --rm evaluate \
-  uv run --no-sync evaluate/evaluate_search.py --model wavlm
+  uv run --no-sync evaluate/evaluate_search.py --model ecapa
 
-# All three models, full (~45 min — the exact brute-force scan is the cost):
+# All three models, full (~45 min — the exact brute-force scan and the voting aggregation is the cost):
 docker compose run --rm evaluate
 ```
 
@@ -86,7 +86,7 @@ down` (add `-v` to also drop the restored DB volume and re-restore next time).
 
 Instead of the dump, you can populate from the raw `.pt` embeddings. This needs
 the enrollment files (`voxceleb_embeddings*.pt`) and `vox1_meta.csv` in
-`data_base/data/`, and takes ~25 min (it also builds the HNSW index):
+`data_base/data/`, and takes ~25 min (it also builds the HNSW index which is not used currently):
 
 ```bash
 docker compose --profile populate run --rm populate
@@ -218,8 +218,7 @@ populate is only needed to rebuild from raw embeddings.
 
 The `evaluate/` package evaluates speaker identification over the held-out test
 embeddings and writes a JSON summary to
-`results/speaker_search_evaluation_<model>.json` (plus a Markdown summary to the
-terminal). Run it on demand (see the Docker section) or directly:
+`results/speaker_search_evaluation_<model>.json` Run it on demand (see the Docker section) or directly:
 
 ```bash
 uv run python evaluate/evaluate_search.py --model ecapa
