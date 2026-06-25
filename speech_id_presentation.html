@@ -70,6 +70,21 @@
   .reveal section img{ margin:0; }
   code.k{ background:#0E2A47; color:#7EE3C7; font-size:.5em; padding:.06em .4em; border-radius:6px; font-family:"Consolas",monospace; }
   .pill-list span{ display:block; font-size:.6em; margin:.25em 0; }
+
+  .erwrap{ display:flex; align-items:center; justify-content:center; gap:.35em; margin-top:.4em; }
+  .ercol{ display:flex; flex-direction:column; gap:.55em; }
+  .erbox{ background:#fff; border:1px solid var(--line); border-radius:9px; overflow:hidden; box-shadow:0 4px 12px rgba(15,40,70,.08); min-width:3.3em; }
+  .erhead{ background:var(--navy); color:#fff; font-weight:700; font-size:.42em; padding:.42em .7em; font-family:"Consolas",monospace; }
+  .erbox.alt .erhead{ background:var(--teal); }
+  .errow{ display:flex; justify-content:space-between; gap:.8em; font-size:.4em; padding:.3em .7em; border-bottom:1px solid #EEF2F6; font-family:"Consolas",monospace; }
+  .errow:last-child{ border-bottom:none; }
+  .errow .c{ color:var(--ink); }
+  .errow .c.pk{ font-weight:700; }
+  .errow .t{ color:var(--muted); }
+  .errow .t b{ color:var(--blue); }
+  .erlink{ color:var(--teal); font-size:.9em; font-weight:800; align-self:center; padding:0 .05em; }
+  .ernote{ text-align:center; font-size:.5em; color:var(--muted); margin-top:.6em; }
+  .ernote b{ color:var(--navy); }
 </style>
 </head>
 <body>
@@ -93,14 +108,14 @@
       <ul class="small">
         <li><b>Speaker identification</b> = which enrolled speaker produced a given utterance.</li>
         <li>Core to meeting transcription, voice access control, and personalised voice assistants.</li>
-        <li>In a <b>closed set</b>, identification reduces to a <b>nearest-neighbour search</b> against enrolled voice data.</li>
-        <li>At tens of thousands of utterances, the naive <b>exhaustive scan becomes the bottleneck</b>.</li>
+        <li>In a <b>closed set</b>, identification reduces to a <b>search</b> against enrolled voice data.</li>
+        <li>At larger scales, the naive <b>exhaustive scan might become a bottleneck</b>.</li>
       </ul>
     </div>
     <div class="card mint">
       <span class="tag">The two questions</span>
-      <p style="font-size:.66em;"><b>1. Speed vs. accuracy</b> — can partitioning the database cut search cost without losing identification accuracy?</p>
-      <p style="font-size:.66em; margin-top:.5em;"><b>2. How much does the embedding matter</b> — does the choice of voice representation dominate the choice of search strategy?</p>
+      <p style="font-size:.66em;"><b>1. Speed VS Accuracy</b>: Can partitioning the database cut search cost without losing identification accuracy?</p>
+      <p style="font-size:.66em; margin-top:.5em;"><b>2. How much does the representation matter</b>? Does the choice of different voice representations dominate the choice of search strategy?</p>
     </div>
   </div>
   <div class="stat-row">
@@ -121,7 +136,6 @@
     <div class="card mint"><span class="tag">3 aggregation modes</span>
       <p style="color:#1E293B;">Speaker centroid<br>Closest utterance<br>Majority vote</p></div>
   </div>
-  <p style="text-align:center; font-size:.8em; margin-top:.7em;">3 &times; 3 &times; 3 = <span class="accent" style="font-weight:800;">27 experimental configurations</span></p>
   <p class="subtle" style="text-align:center; font-size:.6em;">Shared backend: PostgreSQL 16 + pgvector &middot; evaluated on 8,676 unseen test utterances</p>
 </section>
 
@@ -131,9 +145,9 @@
   <div class="grid2">
     <div>
       <ul class="small">
-        <li><b>VoxCeleb1</b>: 1,251 celebrities (690 M / 561 F), YouTube interviews, 16 kHz <code class="k">.wav</code>.</li>
-        <li><b>Leave-one-video-out</b> split: the lexicographically last video directory of <i>each</i> speaker moves to the test set.</li>
-        <li>Minimises leakage &mdash; test utterances come from a recording session unseen during enrollment.</li>
+        <li><b>VoxCeleb1</b>: 1,251 celebrities' (690 M / 561 F) YouTube interviews, 16 kHz wav.</li>
+        <li><b>Leave-one-video-out</b> split: the lexicographically last video directory of <i>each</i> speaker moves to the test set for speakers with more than one video.</li>
+        <li><b>Minimises leakage</b> as much as possible: test utterances come from a recording session unseen during enrollment.</li>
       </ul>
     </div>
     <div class="chartbox">
@@ -154,13 +168,13 @@
   <div class="grid3">
     <div class="card blue"><span class="tag">192-d &middot; task-specific</span>
       <h3>ECAPA-TDNN</h3>
-      <p>SpeechBrain <code class="k">spkrec-ecapa-voxceleb</code>. Conv + Res2Net blocks. Fine-tuned on VoxCeleb2 with additive angular-margin loss. L2-normalised.</p></div>
+      <p>SpeechBrain <b>spkrec-ecapa-voxceleb</b>. Conv + Res2Net blocks. Fine-tuned on VoxCeleb2 with additive angular-margin loss. L2-normalised.</p></div>
     <div class="card"><span class="tag">512-d &middot; task-specific</span>
       <h3>WavLM X-Vector</h3>
-      <p>WavLM-Base+ transformer with an x-vector head (stats pooling + projection), fine-tuned on VoxCeleb1 for verification.</p></div>
+      <p><b>microsoft/wavlm-base-plus-sv</b> transformer with an x-vector head (stats pooling + projection), fine-tuned on VoxCeleb1 for verification.</p></div>
     <div class="card mint"><span class="tag">768-d &middot; no fine-tuning</span>
       <h3>WavLM mean-pooled</h3>
-      <p>Generic <code class="k">microsoft/wavlm-base-plus</code>. Mean-pool all 12 layers, &le;20 s. Tests whether generic reps carry speaker identity.</p></div>
+      <p>Generic <b>microsoft/wavlm-base-plus</b>. Mean-pool all 12 layers, &le;20 s. Tests whether generic reps carry speaker identity.</p></div>
   </div>
   <p class="subtle" style="font-size:.58em; margin-top:.6em;">Each model is stored in its own isolated PostgreSQL schema with a model-specific vector dimension.</p>
 </section>
@@ -170,7 +184,7 @@
   <h2 class="slide-title">Database architecture</h2>
   <div class="grid2">
     <div>
-      <p style="font-size:.62em;"><b>PostgreSQL 16 + pgvector 0.4.2</b> in Docker. One schema per model (<code class="k">public</code> / <code class="k">wavlm_xvector</code> / <code class="k">wavlm</code>), identical structure, dim per model.</p>
+      <p style="font-size:.62em;"><b>PostgreSQL 16 + pgvector 0.4.2</b> in Docker. One schema per model (<b>public</b> / <b>wavlm_xvector</b> / <b>wavlm</b>), identical structure, dim per model.</p>
       <table class="data" style="margin-top:.4em;">
         <tr><th class="l">Table</th><th>Rows</th><th class="l">Purpose</th></tr>
         <tr><td class="l">speakers</td><td>1,251</td><td class="l">gender + nationality</td></tr>
@@ -182,28 +196,70 @@
     <div>
       <p style="font-size:.6em; font-weight:700; color:var(--navy); margin-bottom:.3em;">Population pipeline</p>
       <div class="flow" style="flex-direction:column; gap:.35em;">
-        <div class="step"><span class="n">1</span><h3>Ingestion</h3><p>Load <code class="k">.pt</code> embeddings + metadata, stream via binary COPY, build 58 metadata centroids.</p></div>
+        <div class="step"><span class="n">1</span><h3>Ingestion</h3><p>Load <b>.pt</b> embeddings + metadata, stream via binary COPY, build 58 metadata centroids.</p></div>
         <div class="step"><span class="n">2</span><h3>Clustering</h3><p>L2-normalise all vectors, run MiniBatchKMeans (K = 256).</p></div>
-        <div class="step"><span class="n">3</span><h3>Assignment</h3><p>Store cluster centroids, tag every row with its <code class="k">cluster_id</code>.</p></div>
+        <div class="step"><span class="n">3</span><h3>Assignment</h3><p>Store cluster centroids, tag every row with its <b>cluster_id</b>.</p></div>
       </div>
     </div>
   </div>
+</section>
+
+<!-- 5b ER DIAGRAM -->
+<section>
+  <h2 class="slide-title">Database schemas</h2>
+  <div class="erwrap">
+    <div class="ercol">
+      <div class="erbox">
+        <div class="erhead">speakers</div>
+        <div class="errow"><span class="c pk">speaker_id</span><span class="t"><b>PK</b> varchar(20)</span></div>
+        <div class="errow"><span class="c">gender</span><span class="t">varchar(10)</span></div>
+        <div class="errow"><span class="c">nationality</span><span class="t">varchar(20)</span></div>
+      </div>
+    </div>
+    <div class="erlink">1&mdash;&lt;</div>
+    <div class="ercol">
+      <div class="erbox">
+        <div class="erhead">audio_embeddings</div>
+        <div class="errow"><span class="c pk">id</span><span class="t"><b>PK</b> int identity</span></div>
+        <div class="errow"><span class="c">speaker_id</span><span class="t"><b>FK</b> varchar(20)</span></div>
+        <div class="errow"><span class="c">file_path</span><span class="t">text</span></div>
+        <div class="errow"><span class="c">cluster_id</span><span class="t"><b>FK</b> int</span></div>
+        <div class="errow"><span class="c">embedding</span><span class="t">vector({dim})</span></div>
+      </div>
+    </div>
+    <div class="erlink">&gt;&mdash;1</div>
+    <div class="ercol">
+      <div class="erbox">
+        <div class="erhead">cluster_centroids</div>
+        <div class="errow"><span class="c pk">cluster_id</span><span class="t"><b>PK</b> int</span></div>
+        <div class="errow"><span class="c">centroid_vector</span><span class="t">vector({dim})</span></div>
+      </div>
+    </div>
+  </div>
+  <div style="display:flex; justify-content:center; margin-top:.5em;">
+    <div class="erbox alt" style="min-width:9em;">
+      <div class="erhead">metadata_centroids &nbsp;<span style="font-weight:400; opacity:.8;">(no FK &middot; lookup for metadata routing)</span></div>
+      <div class="errow"><span class="c pk">category</span><span class="t"><b>PK</b> varchar(20)</span></div>
+      <div class="errow"><span class="c pk">category_value</span><span class="t"><b>PK</b> varchar(50)</span></div>
+      <div class="errow"><span class="c">centroid_vector</span><span class="t">vector({dim})</span></div>
+    </div>
+  </div>
+  <p class="ernote">Two foreign keys: every <b>audio_embeddings</b> row links to one <b>speaker</b> and one <b>cluster</b> (one-to-many each). <b>metadata_centroids</b> is standalone &mdash; mean vectors per gender / gender&times;nationality. Structure replicated across <b>3 schemas</b>: public (192), wavlm_xvector (512), wavlm (768).</p>
 </section>
 
 <!-- 7 SEARCH ARCHITECTURES -->
 <section>
   <h2 class="slide-title">Three search architectures</h2>
   <div class="flow">
-    <div class="step"><span class="n" style="background:var(--blue);">A</span><h3>Brute-force</h3><p>Full sequential scan over all 144,840 vectors. Cosine <code class="k">&lt;=&gt;</code>, ORDER BY, LIMIT. The accuracy ceiling.</p></div>
+    <div class="step"><span class="n" style="background:var(--blue);">A</span><h3>Brute-force</h3><p>Full sequential scan over all 144,840 vectors. Cosine <b>&lt;=&gt;</b>, ORDER BY, LIMIT.</p></div>
     <div class="arrow">&rarr;</div>
-    <div class="step"><span class="n" style="background:var(--teal);">B</span><h3>Metadata hierarchy</h3><p>Pick nearest gender centroid, then top-<i>P</i> nationalities &mdash; query only that filtered candidate pool.</p></div>
+    <div class="step"><span class="n" style="background:var(--teal);">B</span><h3>Metadata hierarchy</h3><p>Pick nearest gender centroid, then top-<i>P</i> nationalities then query only that filtered candidate pool.</p></div>
     <div class="arrow">&rarr;</div>
-    <div class="step"><span class="n" style="background:var(--mint);">C</span><h3>K-means routing</h3><p>Find nearest cluster centroid (C = 1), scan only that cluster &mdash; ~600 of 144,840 candidates.</p></div>
+    <div class="step"><span class="n" style="background:var(--mint);">C</span><h3>K-means routing</h3><p>Find nearest cluster centroid (C = 1) and scan only that cluster. ~600 of 144,840 candidates.</p></div>
   </div>
   <div class="card" style="margin-top:.6em; background:var(--bgtint);">
-    <p style="font-size:.58em; color:var(--ink);"><b>Fair comparison:</b> index scans are disabled before every run (<code class="k">enable_indexscan/indexonlyscan/bitmapscan = off</code>) so PostgreSQL performs exact sequential scans regardless of architecture.</p>
+    <p style="font-size:.58em; color:var(--ink);"><b>Fair comparison:</b> index scans are disabled before every run (<b>enable_indexscan/indexonlyscan/bitmapscan = off</b>) so PostgreSQL performs exact sequential scans regardless of architecture.</p>
   </div>
-  <p class="subtle" style="font-size:.55em; margin-top:.4em;">All searches use cosine similarity on L2-normalised embeddings. K-means cuts the candidate set by ~256&times;.</p>
 </section>
 
 <!-- 8 AGGREGATION + METRICS -->
@@ -212,17 +268,17 @@
   <div class="grid2">
     <div>
       <p style="font-size:.6em; font-weight:700; color:var(--navy); margin-bottom:.2em;">How a winning speaker is chosen</p>
-      <div class="card blue" style="margin-bottom:.35em;"><span class="tag">Speaker centroid</span><p>Pre-computed per-speaker mean vectors held in memory &rarr; pure in-memory cosine. Very fast.</p></div>
+      <div class="card blue" style="margin-bottom:.35em;"><span class="tag">Speaker centroid</span><p>Pre-computed per-speaker mean vectors held in memory.</p></div>
       <div class="card" style="margin-bottom:.35em;"><span class="tag">Closest utterance</span><p>Return the speaker of the single nearest database result.</p></div>
-      <div class="card mint"><span class="tag">Vote</span><p>Top-25 results vote by speaker_id; most votes wins, ties broken by best distance.</p></div>
+      <div class="card mint"><span class="tag">Vote</span><p>Top-25 results vote by speaker_id. Most votes wins, ties broken by best distance.</p></div>
     </div>
     <div>
-      <p style="font-size:.6em; font-weight:700; color:var(--navy); margin-bottom:.2em;">Metrics (macro-averaged over 1,251 speakers)</p>
+      <p style="font-size:.6em; font-weight:700; color:var(--navy); margin-bottom:.2em;">Metrics:</p>
       <ul class="small">
         <li><b>Top-1 %</b> &mdash; correct speaker ranked first.</li>
         <li><b>Hit@10 %</b> &mdash; correct speaker in the top 10.</li>
         <li><b>Macro-F1 %</b> &mdash; per-speaker precision/recall.</li>
-        <li><b>Latency (ms/query)</b> &mdash; <code class="k">perf_counter</code> over all 8,676 queries.</li>
+        <li><b>Latency (ms/query)</b> &mdash; <b>perf_counter</b> over all 8,676 queries.</li>
       </ul>
     </div>
   </div>
@@ -232,18 +288,51 @@
 <section>
   <h2 class="slide-title">Results &mdash; ECAPA-TDNN</h2>
   <table class="data">
-    <tr><th class="l">Architecture</th><th class="l">Aggregation</th><th>Top-1 %</th><th>Hit@10 %</th><th>F1 %</th><th>ms / query</th></tr>
-    <tr class="hi"><td class="l">Brute-force</td><td class="l">Closest</td><td class="win">99.75</td><td>99.94</td><td>99.06</td><td>37.81</td></tr>
-    <tr><td class="l">Brute-force</td><td class="l">Speaker centroid</td><td>99.64</td><td>99.97</td><td>98.99</td><td>0.030</td></tr>
-    <tr class="hi"><td class="l">K-means</td><td class="l">Speaker centroid</td><td class="win">93.56</td><td>93.75</td><td>88.81</td><td>0.015</td></tr>
-    <tr><td class="l">K-means</td><td class="l">Closest</td><td>93.29</td><td>93.66</td><td>88.52</td><td>48.25</td></tr>
-    <tr><td class="l">Metadata hier.</td><td class="l">Closest (P=1)</td><td>33.29</td><td>33.30</td><td>29.21</td><td>30.47</td></tr>
+    <tr><th class="l">Architecture</th><th class="l">Aggregation</th><th>Top-1 %</th><th>Hit@10 %</th><th>F1 %</th><th>ms / query</th><th class="l">Notable for</th></tr>
+    <tr><td class="l">Brute-force</td><td class="l">Speaker centroid</td><td>99.64</td><td>99.97</td><td>98.99</td><td>0.030</td><td class="l">&mdash;</td></tr>
+    <tr class="hi"><td class="l">Brute-force</td><td class="l">Closest</td><td class="win">99.75</td><td>99.94</td><td>99.06</td><td>37.81</td><td class="l">Highest accuracy</td></tr>
+    <tr><td class="l">Brute-force</td><td class="l">Vote</td><td>99.68</td><td>99.94</td><td>98.97</td><td>37.86</td><td class="l">&mdash;</td></tr>
+    <tr><td class="l">Metadata hier.</td><td class="l">Speaker centroid</td><td>33.24</td><td>33.29</td><td>28.94</td><td>0.032</td><td class="l">&mdash;</td></tr>
+    <tr><td class="l">Metadata hier.</td><td class="l">Closest</td><td>33.29</td><td>33.30</td><td>29.21</td><td>30.47</td><td class="l">Routing collapse</td></tr>
+    <tr><td class="l">Metadata hier.</td><td class="l">Vote</td><td>33.25</td><td>33.30</td><td>29.12</td><td>30.21</td><td class="l">&mdash;</td></tr>
+    <tr class="hi"><td class="l">K-means</td><td class="l">Speaker centroid</td><td class="win">93.56</td><td>93.75</td><td>88.81</td><td>0.015</td><td class="l">Best speed/accuracy</td></tr>
+    <tr><td class="l">K-means</td><td class="l">Closest</td><td>93.29</td><td>93.66</td><td>88.52</td><td>48.25</td><td class="l">&mdash;</td></tr>
+    <tr><td class="l">K-means</td><td class="l">Vote</td><td>85.10</td><td>93.66</td><td>77.17</td><td>48.19</td><td class="l">Vote hurts</td></tr>
   </table>
-  <div class="stat-row" style="margin-top:.55em;">
-    <div class="stat"><div class="num">99.75%</div><div class="lbl">best Top-1 (brute-force, closest)</div></div>
-    <div class="stat"><div class="num mint">2,520&times;</div><div class="lbl">K-means centroid speed-up vs BF closest</div></div>
-    <div class="stat"><div class="num mint">0.015 ms</div><div class="lbl">K-means centroid latency, 93.56% Top-1</div></div>
-  </div>
+</section>
+
+<!-- 9b RESULTS WAVLM X-VECTOR -->
+<section>
+  <h2 class="slide-title">Results &mdash; WavLM X-Vector (512-d)</h2>
+  <table class="data">
+    <tr><th class="l">Architecture</th><th class="l">Aggregation</th><th>Top-1 %</th><th>Hit@10 %</th><th>F1 %</th><th>ms / query</th><th class="l">Notable for</th></tr>
+    <tr><td class="l">Brute-force</td><td class="l">Speaker centroid</td><td>95.84</td><td>99.10</td><td>92.55</td><td>0.051</td><td class="l">&mdash;</td></tr>
+    <tr class="hi"><td class="l">Brute-force</td><td class="l">Closest</td><td class="win">97.42</td><td>99.65</td><td>94.96</td><td>238.34</td><td class="l">Highest accuracy</td></tr>
+    <tr><td class="l">Brute-force</td><td class="l">Vote</td><td>96.83</td><td>99.65</td><td>94.03</td><td>237.26</td><td class="l">&mdash;</td></tr>
+    <tr><td class="l">Metadata hier.</td><td class="l">Speaker centroid</td><td>32.83</td><td>33.62</td><td>28.50</td><td>0.038</td><td class="l">&mdash;</td></tr>
+    <tr><td class="l">Metadata hier.</td><td class="l">Closest</td><td>33.07</td><td>33.63</td><td>28.59</td><td>26.24</td><td class="l">Routing collapse</td></tr>
+    <tr><td class="l">Metadata hier.</td><td class="l">Vote</td><td>33.10</td><td>33.63</td><td>28.74</td><td>26.47</td><td class="l">&mdash;</td></tr>
+    <tr class="hi"><td class="l">K-means</td><td class="l">Speaker centroid</td><td class="win">93.44</td><td>95.78</td><td>88.94</td><td>0.023</td><td class="l">Best speed/accuracy</td></tr>
+    <tr><td class="l">K-means</td><td class="l">Closest</td><td>93.04</td><td>95.95</td><td>88.18</td><td>14.01</td><td class="l">&mdash;</td></tr>
+    <tr><td class="l">K-means</td><td class="l">Vote</td><td>81.13</td><td>95.95</td><td>73.12</td><td>14.04</td><td class="l">Vote hurts</td></tr>
+  </table>
+</section>
+
+<!-- 9c RESULTS WAVLM MEAN-POOLED -->
+<section>
+  <h2 class="slide-title">Results &mdash; WavLM mean-pooled (768-d)</h2>
+  <table class="data">
+    <tr><th class="l">Architecture</th><th class="l">Aggregation</th><th>Top-1 %</th><th>Hit@10 %</th><th>F1 %</th><th>ms / query</th><th class="l">Notable for</th></tr>
+    <tr><td class="l">Brute-force</td><td class="l">Speaker centroid</td><td>26.19</td><td>49.87</td><td>18.01</td><td>0.039</td><td class="l">&mdash;</td></tr>
+    <tr><td class="l">Brute-force</td><td class="l">Closest</td><td>26.96</td><td>51.90</td><td>19.01</td><td>259.54</td><td class="l">&mdash;</td></tr>
+    <tr class="hi"><td class="l">Brute-force</td><td class="l">Vote</td><td class="win">29.66</td><td>53.08</td><td>20.44</td><td>258.10</td><td class="l">Best Top-1 (still weak)</td></tr>
+    <tr><td class="l">Metadata hier.</td><td class="l">Speaker centroid</td><td>7.46</td><td>12.79</td><td>4.99</td><td>0.032</td><td class="l">&mdash;</td></tr>
+    <tr><td class="l">Metadata hier.</td><td class="l">Closest</td><td>7.04</td><td>12.49</td><td>5.20</td><td>21.14</td><td class="l">Routing collapse</td></tr>
+    <tr><td class="l">Metadata hier.</td><td class="l">Vote</td><td>7.35</td><td>12.66</td><td>4.89</td><td>21.13</td><td class="l">&mdash;</td></tr>
+    <tr><td class="l">K-means</td><td class="l">Speaker centroid</td><td>23.62</td><td>43.11</td><td>16.39</td><td>0.081</td><td class="l">Degrades vs BF</td></tr>
+    <tr><td class="l">K-means</td><td class="l">Closest</td><td>17.95</td><td>34.64</td><td>12.72</td><td>14.45</td><td class="l">&mdash;</td></tr>
+    <tr><td class="l">K-means</td><td class="l">Vote</td><td>14.20</td><td>35.18</td><td>9.02</td><td>14.43</td><td class="l">&mdash;</td></tr>
+  </table>
 </section>
 
 <!-- 10 CROSS-MODEL CHART -->
@@ -261,7 +350,6 @@
   <div class="chartbox" style="height:54%; width:82%; margin:0 auto;">
     <canvas id="chartProbe"></canvas>
   </div>
-  <p class="caption">Top-1 % (closest) vs nationality probe depth P. P=1 fails as a routing-coverage problem &mdash; deeper probing recovers accuracy, but WavLM mean-pooled stays capped by embedding quality.</p>
 </section>
 
 <!-- 12 ANALYSIS -->
@@ -269,11 +357,11 @@
   <h2 class="slide-title">Key analysis</h2>
   <div class="grid3">
     <div class="card blue"><span class="tag">Search architecture</span>
-      <p>Brute-force is near-perfect for ECAPA. K-means centroid <b>nearly matches it at ~2,500&times; the speed</b>. Metadata <i>hard-filtering</i> collapses to ~33% &mdash; a routing error excludes the true speaker irreversibly.</p></div>
+      <p>Brute-force is near-perfect for ECAPA. K-means centroid <b>nearly matches it at better speed</b>. Metadata filtering collapses to ~33% &mdash; a routing error excludes the true speaker irreversibly.</p></div>
     <div class="card"><span class="tag">Aggregation mode</span>
-      <p>Centroid &asymp; closest in accuracy but ~<b>1,260&times; faster</b> (0.030 vs 37.81 ms). Vote <i>hurts</i> under K-means routing &mdash; dominant high-utterance speakers bias the majority.</p></div>
+      <p>Centroid is closest in accuracy but much faster</b> (0.030 vs 37.81 ms). Vote <i>hurts</i> under K-means routing &mdash; dominant high-utterance speakers bias the majority.</p></div>
     <div class="card mint"><span class="tag">Embedding quality</span>
-      <p>The <b>binding constraint</b>. WavLM mean-pooled caps at 29.66% Top-1 <i>even with brute-force</i> &mdash; no search strategy recovers from a weak representation.</p></div>
+      <p>The <b>representation constraint</b>. WavLM mean-pooled caps at 29.66% Top-1 <i>even with brute-force</i> &mdash; no search strategy recovers from a weak representation.</p></div>
   </div>
   <div class="card" style="margin-top:.55em; background:var(--bgtint);">
     <p style="font-size:.6em;"><b>Three-tier hierarchy:</b> ECAPA-TDNN (best accuracy + lowest centroid latency) &gt; WavLM X-Vector (97.42% Top-1, larger 512-d vectors &rarr; higher closest-search latency) &gt; WavLM mean-pooled (unsuitable without fine-tuning).</p>
@@ -284,18 +372,18 @@
 <section data-background-color="#0E2A47" class="dark">
   <h2 class="slide-title" style="color:#fff;">Conclusions</h2>
   <div class="grid2">
-    <div class="pill-list">
-      <span><span class="lead-num">1.</span> &nbsp;Task-specific embeddings matter most &mdash; fine-tuning dominates the choice of search strategy.</span>
-      <span><span class="lead-num">2.</span> &nbsp;Brute-force <b>centroid</b> is the practical optimum for ECAPA at this scale.</span>
-      <span><span class="lead-num">3.</span> &nbsp;K-means <b>centroid</b> is the scalable real-time option: 93.56% Top-1 at 0.015 ms.</span>
-      <span><span class="lead-num">4.</span> &nbsp;Metadata hierarchy is not viable as a hard filter.</span>
-      <span><span class="lead-num">5.</span> &nbsp;Vote aggregation degrades under K-means routing (dominant-speaker bias).</span>
-    </div>
+    <ul style="margin-left:.8em;">
+      <li>The use of task-specific model embeddings is important.</li>
+      <li>Brute-force centroid is the practical optimum for ECAPA for a database of this scale.</li>
+      <li>K-Means centroid is the scalable real-time option.</li>
+      <li>Metadata hierarchy is not viable as a hard filter.</li>
+      <li>Vote aggregation degrades under K-Means routing due to dominant speaker.</li>
+    </ul>
     <div class="card" style="background:#13395f; border-color:#1d4f7e;">
       <span class="tag" style="background:var(--mint);">Future work</span>
       <p style="color:#E6EEF5;">Multi-probe K-means (C &gt; 1) to close the gap to brute-force.</p>
-      <p style="color:#E6EEF5;">HNSW database indexing for sub-linear search.</p>
-      <p style="color:#E6EEF5;">AAM-softmax fine-tuning of WavLM to lift the embedding ceiling.</p>
+      <p style="color:#E6EEF5;">HNSW database indexing for better search.</p>
+      <p style="color:#E6EEF5;">Fine-tuning of WavLM to lift the representation performance.</p>
     </div>
   </div>
   <p class="subtle" style="font-size:.55em; margin-top:.9em;">VoxCeleb1 &middot; github.com/g-nazos/speech-id</p>
