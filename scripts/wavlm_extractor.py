@@ -103,9 +103,7 @@ def main(
     datadir = os.path.join(project_root, "data", split)
     out_name = spec.test_pt_file if "test" in split else spec.pt_file
     checkpoint_path = os.path.join(DATA_OUT_DIR, out_name)
-    # Cap clip length: WavLM attention cost grows with sequence length, so the
-    # long tail (~4% of clips > 20s, up to 145s) would OOM at any useful batch
-    # size. 20s keeps 96% of clips whole. 0 disables the cap.
+    # Cap clip length: 20s
     max_samples = (
         int(max_seconds * TARGET_SR) if max_seconds and max_seconds > 0 else None
     )

@@ -173,6 +173,13 @@ def main() -> None:
         choices=["cosine", "euclidean"],
         default=list(DEFAULT_METRICS),
     )
+    parser.add_argument(
+        "--architectures",
+        nargs="+",
+        choices=["brute_force", "metadata_hierarchy", "kmeans_clusters"],
+        default=["brute_force", "metadata_hierarchy", "kmeans_clusters"],
+        help="Which search architectures to evaluate. Defaults to all three.",
+    )
     parser.add_argument("--cluster-probes", type=int, nargs="+", default=[1])
     parser.add_argument("--metadata-probes", type=int, nargs="+", default=[1])
     parser.add_argument("--top-k", type=int, default=DEFAULT_TOP_K)
@@ -225,11 +232,7 @@ def main() -> None:
         with conn.cursor() as cur:
             for metric in args.metrics:
                 metric_rows: list[dict[str, object]] = []
-                for architecture in [
-                    "brute_force",
-                    "metadata_hierarchy",
-                    "kmeans_clusters",
-                ]:
+                for architecture in args.architectures:
                     if architecture == "kmeans_clusters":
                         probe_values = sorted(
                             {max(1, value) for value in args.cluster_probes}
