@@ -1,0 +1,120 @@
+services:
+  # Postgres + pgvector. On first start (empty volume) it auto-restores the
+  # pre-populated dump from data_base/db_dump/ via the init hooks below, so the
+  # DB is query-ready in ~30s without running the populate pipeline.
+  db:
+    image: pgvector/pgvector:pg16
+    restart: always
+    env_file: ./data_base/.env
+    ports:
+      - "${DB_PORT:-8023}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./data_base/init.sql:/docker-entrypoint-initdb.d/00_init.sql:ro
+      - ./data_base/restore_db.sh:/docker-entrypoint-initdb.d/01_restore.sh:ro
+      - ./data_base/db_dump:/dump:ro
+    # TCP check (not the unix socket): during first-init the temporary restore
+    # server listens on the socket only, so a TCP probe stays "unhealthy" until
+    # the real server starts — i.e. until the dump restore has finished.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $$DB_USER -d $$DB_NAME"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 120s
+
+  # Evaluation — on demand (not started by a bare `docker compose up`).
+  # Run all 3 models:   docker compose run --rm evaluate
+  # Quick single model: docker compose run --rm evaluate \
+  #                       uv run --no-sync evaluate/evaluate_search.py --model ecapa --max-queries 500
+  evaluate:
+    build: .
+    image: speech-id
+    profiles: ["evaluate"]
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: ./data_base/.env
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+    volumes:
+      - ./data_base:/app/data_base
+      - ./configs:/app/configs
+      - ./results:/app/results
+    command:
+      - bash
+      - -lc
+      - >
+        set -e;
+        uv run --no-sync data_base/preflight_data.py --stage evaluate;
+        for m in ecapa wavlm wavlm_xvector; do
+          echo "==== [evaluate] model=$$m ====";
+          uv run --no-sync evaluate/evaluate_search.py --model $$m;
+        done;
+        echo "==== evaluate complete ===="
+
+  # Optional: rebuild the DB from raw .pt embeddings instead of the dump.
+  # Needs the enrollment .pt files + vox1_meta.csv in data_base/data/ and builds
+  # the full DB (incl. the HNSW index). Slow (~25 min). Opt-in:
+  #   docker compose --profile populate run --rm populate
+  populate:
+    build: .
+    image: speech-id
+    profiles: ["populate"]
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: ./data_base/.env
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+    volumes:
+      - ./data_base:/app/data_base
+      - ./configs:/app/configs
+    command:
+      - bash
+      - -lc
+      - >
+        set -e;
+        uv run --no-sync data_base/preflight_data.py --stage populate;
+        for m in ecapa wavlm wavlm_xvector; do
+          echo "==== [populate] model=$$m ====";
+          uv run --no-sync data_base/populate_db.py --model $$m;
+        done;
+        echo "==== populate complete ===="
+
+  # Optional: regenerate the .pt embeddings from raw VoxCeleb audio (needs GPU).
+  extractor:
+    build: .
+    image: speech-id
+    profiles: ["extract"]
+    env_file: ./data_base/.env
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+    volumes:
+      - ./data:/app/data
+      - ./data_base:/app/data_base
+      - ./configs:/app/configs
+      - ./pretrained_models:/app/pretrained_models
+      - hf_cache:/root/.cache/huggingface
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    command:
+      - bash
+      - -lc
+      - >
+        echo 'Run an extractor explicitly, e.g.:';
+        echo '  docker compose --profile extract run --rm extractor uv run scripts/embeding_extractor.py';
+        echo '  docker compose --profile extract run --rm extractor uv run scripts/wavlm_extractor.py --model wavlm';
+        echo '  docker compose --profile extract run --rm extractor uv run scripts/wavlm_extractor.py --model wavlm_xvector'
+
+volumes:
+  postgres_data:
+  hf_cache:
