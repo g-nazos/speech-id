@@ -103,6 +103,30 @@ uv sync --group dev
 pre-commit install
 ```
 
+### Populate the database, then evaluate
+
+The evaluation queries PostgreSQL, so the database must be populated **before**
+running it. Without Docker you need a reachable PostgreSQL with `pgvector`
+enabled, with `data_base/.env` pointing at it (`cp data_base/.env.example
+data_base/.env` and edit `DB_HOST`/`DB_PORT`/credentials). You can start one with
+just `docker compose up -d db`, or use a local install.
+
+```bash
+# 1. Put the enrollment .pt files + vox1_meta.csv in data_base/data/, then
+#    populate each model's schema (--model is required, deterministic):
+uv run python data_base/populate_db.py --model ecapa
+uv run python data_base/populate_db.py --model wavlm
+uv run python data_base/populate_db.py --model wavlm_xvector
+
+# 2. Run the evaluation against the populated DB:
+uv run python evaluate/evaluate_search.py --model ecapa
+uv run python evaluate/evaluate_search.py --model wavlm
+uv run python evaluate/evaluate_search.py --model wavlm_xvector
+```
+
+If you already have the pre-populated `voxceleb_db.dump`, you can skip step 1 by
+restoring it instead: `pg_restore -d <db> --no-owner data_base/db_dump/voxceleb_db.dump`.
+
 ## Data
 
 Download the [VoxCeleb1](https://www.robots.ox.ac.uk/~vgg/data/voxceleb/vox1.html) dev or test set and extract it under `data/`:
